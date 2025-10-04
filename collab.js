@@ -46,10 +46,11 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     const hasLines = roomData && roomData.lines;
     const hasTexts = roomData && roomData.texts;
     const hasPassword = roomData && roomData.password;
+    const hasCreatedFlag = roomData && roomData.created;
     
-    // If room has been explicitly created (has password) or has content, it exists
+    // If room has been explicitly created (has password, created flag) or has content, it exists
     // Otherwise, treat it as a new room
-    const roomExists = hasPassword || hasLines || hasTexts;
+    const roomExists = hasPassword || hasLines || hasTexts || hasCreatedFlag;
     
     if (!roomExists && roomData === null) {
       // Room doesn't exist at all
@@ -513,6 +514,9 @@ document.getElementById('createRoomBtn')?.addEventListener('click', async () => 
   if (password && password.trim()) {
     // Save password to Firebase
     await db.ref(`rooms/${roomId}/password`).set(password.trim());
+  } else {
+    // Create an empty placeholder to mark the room as existing
+    await db.ref(`rooms/${roomId}/created`).set(true);
   }
 
   joinRoom(roomId);
@@ -565,8 +569,12 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
 // ==================== Admin ====================
 (function setupAdmin() {
   const adminKey = "cooper";
-  const isAdmin = prompt("Enter admin key to see admin tools (or cancel):") === adminKey;
+  const userInput = prompt("Enter admin key to see admin tools (or cancel):");
+  const isAdmin = userInput === adminKey;
+  
   if (isAdmin) {
+    isAdminUser = true;
+    
     clearBtn.style.display = 'inline-block';
     clearBtn.addEventListener('click', async () => {
       if (!currentRoomId) return;
@@ -718,6 +726,9 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
             flex: 1;
           `;
           previewBtn.onclick = () => {
+            // Store admin bypass flag in sessionStorage for the new window
+            sessionStorage.setItem('adminBypass', 'true');
+            sessionStorage.setItem('adminBypassRoom', roomId);
             window.open(`#${roomId}`, '_blank');
           };
           
@@ -759,9 +770,23 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
 
 // ==================== Initialize ====================
 window.addEventListener('load', () => {
+  // Check if this is an admin bypass from the preview button
+  const adminBypass = sessionStorage.getItem('adminBypass') === 'true';
+  const adminBypassRoom = sessionStorage.getItem('adminBypassRoom');
+  
+  // Clear the flags after reading
+  sessionStorage.removeItem('adminBypass');
+  sessionStorage.removeItem('adminBypassRoom');
+  
   const hashRoom = window.location.hash.substring(1);
+  
   if (hashRoom) {
-    joinRoom(hashRoom);
+    // If admin bypass is active and the room matches, bypass password
+    if (adminBypass && hashRoom === adminBypassRoom) {
+      joinRoom(hashRoom, null, true);
+    } else {
+      joinRoom(hashRoom);
+    }
   } else {
     joinRoom('public');
   }
