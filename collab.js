@@ -412,7 +412,6 @@ if (sizePicker) {
 const eraserBtn = document.getElementById('eraserBtn');
 const clearBtn = document.getElementById('clearBtn');
 const freeTextInput = document.getElementById('freeTextInput');
-const addTextBtn = document.getElementById('addTextBtn');
 
 let textSizePicker = document.getElementById('textSizePicker');
 let textFontPicker = document.getElementById('textFontPicker');
@@ -449,8 +448,8 @@ if (!textFontPicker) {
     textFontPicker.appendChild(option);
   });
   
-  if (toolbarEl && addTextBtn && addTextBtn.parentElement === toolbarEl) {
-    toolbarEl.insertBefore(textFontPicker, addTextBtn);
+  if (toolbarEl && freeTextInput && freeTextInput.parentElement === toolbarEl) {
+    toolbarEl.insertBefore(textFontPicker, freeTextInput);
   } else if (toolbarEl) {
     toolbarEl.appendChild(textFontPicker);
   } else {
@@ -569,7 +568,7 @@ function findEmptySpace(textWidth, textHeight) {
   };
 }
 
-addTextBtn.addEventListener('click', () => {
+function addTextToCanvas() {
   const content = (freeTextInput.value || '').trim();
   if (!content || !currentRoomId) return;
   const size = getTextSize();
@@ -580,10 +579,47 @@ addTextBtn.addEventListener('click', () => {
   const textWidth = ctx.measureText(content).width;
   const textHeight = size;
   
+  // Check if text can fit anywhere on the canvas (with margins)
+  const margin = 50;
+  const maxWidth = canvas.width - (margin * 2);
+  const maxHeight = canvas.height - (margin * 2);
+  
+  if (textWidth > maxWidth || textHeight > maxHeight) {
+    // Calculate the maximum font size that would fit
+    let maxFontSize = size;
+    
+    if (textWidth > maxWidth) {
+      // Scale down based on width
+      maxFontSize = Math.floor((maxWidth / textWidth) * size);
+    }
+    
+    if (textHeight > maxHeight && maxFontSize > maxHeight) {
+      // Also check height constraint
+      maxFontSize = Math.min(maxFontSize, maxHeight);
+    }
+    
+    alert(`Error: Text is too large to fit on the canvas!\n\nCurrent font size: ${size}px\nMaximum font size that would fit: ${maxFontSize}px\n\nPlease reduce the text size and try again.`);
+    return;
+  }
+  
   const { x, y } = findEmptySpace(textWidth, textHeight);
+  
+  // Final check: make sure the found position actually fits on canvas
+  if (x + textWidth > canvas.width || y + textHeight > canvas.height) {
+    alert(`Error: Cannot find space on canvas for text of this size.\n\nCurrent font size: ${size}px\nTry reducing the text size or clearing some existing text.`);
+    return;
+  }
   
   textsRef.push({ x, y, text: content, size, color: brushColor, font });
   freeTextInput.value = '';
+}
+
+// Add text when Enter key is pressed
+freeTextInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addTextToCanvas();
+  }
 });
 
 // ==================== Room UI ====================
