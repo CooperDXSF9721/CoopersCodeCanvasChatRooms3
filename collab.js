@@ -493,6 +493,22 @@ function findEmptySpace(textWidth, textHeight) {
   const step = 50;
   const maxAttempts = 100;
   
+  // Get toolbar dimensions to avoid placing text behind it
+  const toolbar = document.getElementById('toolbar');
+  const toolbarRect = toolbar ? toolbar.getBoundingClientRect() : null;
+  const toolbarPadding = 20; // Extra space around toolbar
+  
+  // Helper function to check if position overlaps with toolbar
+  function overlapsWithToolbar(x, y, w, h) {
+    if (!toolbarRect) return false;
+    
+    // Check if text overlaps with toolbar area (with padding)
+    return !(x > toolbarRect.right + toolbarPadding || 
+             x + w < toolbarRect.left - toolbarPadding || 
+             y > toolbarRect.bottom + toolbarPadding || 
+             y + h < toolbarRect.top - toolbarPadding);
+  }
+  
   // Helper function to check if a rectangle overlaps with any existing text
   function overlapsWithText(x, y, w, h) {
     let hasOverlap = false;
@@ -528,15 +544,28 @@ function findEmptySpace(textWidth, textHeight) {
       continue;
     }
     
-    if (!overlapsWithText(gridX, gridY, textWidth, textHeight)) {
+    // Check if it overlaps with toolbar or existing text
+    if (!overlapsWithToolbar(gridX, gridY, textWidth, textHeight) &&
+        !overlapsWithText(gridX, gridY, textWidth, textHeight)) {
       return { x: gridX, y: gridY };
     }
   }
   
-  // If no empty space found, place at random location
+  // If no empty space found, place at random location (avoiding toolbar)
+  let randomX, randomY;
+  for (let i = 0; i < 20; i++) {
+    randomX = Math.random() * (canvas.width - textWidth - 100) + 50;
+    randomY = Math.random() * (canvas.height - textHeight - 100) + 50;
+    
+    if (!overlapsWithToolbar(randomX, randomY, textWidth, textHeight)) {
+      return { x: randomX, y: randomY };
+    }
+  }
+  
+  // Last resort: place it in the middle-right area
   return {
-    x: Math.random() * (canvas.width - textWidth - 100) + 50,
-    y: Math.random() * (canvas.height - textHeight - 100) + 50
+    x: canvas.width - textWidth - 100,
+    y: canvas.height / 2
   };
 }
 
