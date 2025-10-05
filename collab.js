@@ -16,6 +16,8 @@ let currentRoomId = null;
 let linesRef = null;
 let textsRef = null;
 let roomDeletedRef = null;
+let roomClearedRef = null;
+let isJoiningRoom = false;
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -77,20 +79,26 @@ async function joinRoom(roomId, password = null) {
   if (linesRef) linesRef.off();
   if (textsRef) textsRef.off();
   if (roomDeletedRef) roomDeletedRef.off();
+  if (roomClearedRef) roomClearedRef.off();
 
   currentRoomId = roomId;
   linesRef = db.ref(`rooms/${roomId}/lines`);
   textsRef = db.ref(`rooms/${roomId}/texts`);
 
+  isJoiningRoom = true;
   linesCache.length = 0;
   textsCache.clear();
   drawAll();
 
   setupFirebaseListeners();
   setupRoomDeletionListener();
+  setupRoomClearedListener();
   updateRoomIndicator();
 
   window.location.hash = roomId;
+  
+  // Reset the flag after listeners are set up
+  setTimeout(() => { isJoiningRoom = false; }, 1000);
 }
 
 function setupRoomDeletionListener() {
@@ -101,6 +109,18 @@ function setupRoomDeletionListener() {
     if (snapshot.val() === true) {
       alert('Sorry, this room has been deleted by the owner.');
       joinRoom('public');
+    }
+  });
+}
+
+function setupRoomClearedListener() {
+  roomClearedRef = db.ref(`rooms/${currentRoomId}/cleared`);
+  roomClearedRef.on('value', snapshot => {
+    if (!isJoiningRoom && snapshot.exists()) {
+      // Canvas was cleared
+      linesCache.length = 0;
+      textsCache.clear();
+      drawAll();
     }
   });
 }
@@ -136,9 +156,16 @@ function updateRoomIndicator() {
 }
 
 function setupFirebaseListeners() {
+  // Store line keys to track them
+  const lineKeys = new Map(); // maps Firebase key to cache index
+  
   linesRef.on('child_added', snapshot => {
     const line = snapshot.val();
+    const key = snapshot.key;
+    const index = linesCache.length;
     linesCache.push(line);
+    lineKeys.set(key, index);
+    
     line.points.forEach(p => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, line.width / 2, 0, Math.PI * 2);
@@ -154,7 +181,15 @@ function setupFirebaseListeners() {
     ctx.globalCompositeOperation = 'source-over';
   });
 
-  // REMOVED THE PROBLEMATIC linesRef.on('value') LISTENER
+  // Listen for when the entire lines node is removed (cleared)
+  linesRef.on('value', snapshot => {
+    if (!isJoiningRoom && !snapshot.exists() && linesCache.length > 0) {
+      // Lines were cleared by someone else
+      linesCache.length = 0;
+      lineKeys.clear();
+      drawAll();
+    }
+  });
 
   textsRef.on('child_added', snapshot => {
     const key = snapshot.key;
@@ -174,6 +209,15 @@ function setupFirebaseListeners() {
     const key = snapshot.key;
     textsCache.delete(key);
     drawAll();
+  });
+
+  // Listen for when the entire texts node is removed (cleared)
+  textsRef.on('value', snapshot => {
+    if (!isJoiningRoom && !snapshot.exists() && textsCache.size > 0) {
+      // Texts were cleared by someone else
+      textsCache.clear();
+      drawAll();
+    }
   });
 }
 
@@ -444,13 +488,71 @@ eraserBtn.addEventListener('click', () => {
   eraserBtn.style.backgroundColor = eraserActive ? 'orange' : '';
 });
 
+function findEmptySpace(textWidth, textHeight) {
+  const padding = 20;
+  const step = 50;
+  const maxAttempts = 100;
+  
+  // Helper function to check if a rectangle overlaps with any existing text
+  function overlapsWithText(x, y, w, h) {
+    let hasOverlap = false;
+    textsCache.forEach(t => {
+      const tSize = t.size || 40;
+      const tFont = t.font || 'sans-serif';
+      const tContent = t.text || '';
+      if (!tContent) return;
+      
+      ctx.font = `${tSize}px ${tFont}`;
+      const tWidth = ctx.measureText(tContent).width;
+      const tHeight = tSize;
+      
+      // Check if rectangles overlap
+      if (!(x + w + padding < t.x || 
+            x > t.x + tWidth + padding || 
+            y + h + padding < t.y || 
+            y > t.y + tHeight + padding)) {
+        hasOverlap = true;
+      }
+    });
+    return hasOverlap;
+  }
+  
+  // Start from a grid pattern
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const gridX = (attempt % 10) * step + 50;
+    const gridY = Math.floor(attempt / 10) * step + 50;
+    
+    // Make sure we stay within canvas bounds
+    if (gridX + textWidth + padding > canvas.width || 
+        gridY + textHeight + padding > canvas.height) {
+      continue;
+    }
+    
+    if (!overlapsWithText(gridX, gridY, textWidth, textHeight)) {
+      return { x: gridX, y: gridY };
+    }
+  }
+  
+  // If no empty space found, place at random location
+  return {
+    x: Math.random() * (canvas.width - textWidth - 100) + 50,
+    y: Math.random() * (canvas.height - textHeight - 100) + 50
+  };
+}
+
 addTextBtn.addEventListener('click', () => {
   const content = (freeTextInput.value || '').trim();
   if (!content || !currentRoomId) return;
   const size = getTextSize();
   const font = getTextFont();
-  const x = current.x || canvas.width / 2;
-  const y = current.y || canvas.height / 2;
+  
+  // Measure the text to find appropriate empty space
+  ctx.font = `${size}px ${font}`;
+  const textWidth = ctx.measureText(content).width;
+  const textHeight = size;
+  
+  const { x, y } = findEmptySpace(textWidth, textHeight);
+  
   textsRef.push({ x, y, text: content, size, color: brushColor, font });
   freeTextInput.value = '';
 });
@@ -531,17 +633,22 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
     clearBtn.style.display = 'inline-block';
     clearBtn.addEventListener('click', async () => {
       if (!currentRoomId) return;
-      if (!confirm('Clear entire canvas? This will remove all drawings and text.')) return;
+      if (!confirm('Clear entire canvas? This will remove all drawings and text for everyone.')) return;
       try {
-        await Promise.all([
-          linesRef.remove(),
-          textsRef.remove()
-        ]);
+        // Set a cleared flag first
+        await db.ref(`rooms/${currentRoomId}/cleared`).set(Date.now());
+        
+        // Then remove the data from Firebase
+        await db.ref(`rooms/${currentRoomId}/lines`).remove();
+        await db.ref(`rooms/${currentRoomId}/texts`).remove();
+        
+        // Clear local cache
         linesCache.length = 0;
         textsCache.clear();
         drawAll();
       } catch (err) {
         console.error('Failed to clear canvas data:', err);
+        alert('Failed to clear canvas. Please try again.');
       }
     });
     
