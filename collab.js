@@ -96,6 +96,10 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     textsRef.once('value')
   ]);
 
+  console.log(`Joining room: ${roomId}`);
+  console.log(`Lines exist: ${linesSnapshot.exists()}, count: ${linesSnapshot.exists() ? Object.keys(linesSnapshot.val()).length : 0}`);
+  console.log(`Texts exist: ${textsSnapshot.exists()}, count: ${textsSnapshot.exists() ? Object.keys(textsSnapshot.val()).length : 0}`);
+
   // Now clear and populate with new data
   linesCache.length = 0;
   textsCache.clear();
@@ -111,6 +115,8 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
       textsCache.set(key, val);
     });
   }
+  
+  console.log(`After loading - linesCache: ${linesCache.length}, textsCache: ${textsCache.size}`);
   
   // Redraw with new room data
   drawAll();
@@ -215,12 +221,21 @@ function updateRoomIndicator() {
 }
 
 function setupFirebaseListeners() {
-  // Only listen for NEW additions after initial load
-  let initialLoad = true;
+  // Use a timestamp to ignore events that happened before we joined
+  const joinTime = Date.now();
   
   linesRef.on('child_added', snapshot => {
-    if (initialLoad) return;
     const line = snapshot.val();
+    // Only process if this line doesn't already exist in our cache
+    const exists = linesCache.some(l => 
+      l.points && line.points && 
+      l.points.length === line.points.length &&
+      l.points[0]?.x === line.points[0]?.x &&
+      l.points[0]?.y === line.points[0]?.y
+    );
+    
+    if (exists) return;
+    
     linesCache.push(line);
     line.points.forEach(p => {
       ctx.beginPath();
@@ -236,13 +251,12 @@ function setupFirebaseListeners() {
     });
     ctx.globalCompositeOperation = 'source-over';
   });
-  
-  // Mark initial load as complete after a brief delay
-  setTimeout(() => { initialLoad = false; }, 500);
 
   textsRef.on('child_added', snapshot => {
-    if (initialLoad) return;
     const key = snapshot.key;
+    // Only process if this text doesn't already exist in our cache
+    if (textsCache.has(key)) return;
+    
     const val = snapshot.val();
     textsCache.set(key, val);
     drawAll();
