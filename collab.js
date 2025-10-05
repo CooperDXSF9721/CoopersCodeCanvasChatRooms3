@@ -109,10 +109,10 @@ function setupRoomDeletionListener() {
   if (currentRoomId === 'public') return;
   
   roomDeletedRef = db.ref(`rooms/${currentRoomId}/deleted`);
-  roomDeletedRef.on('value', snapshot => {
+  roomDeletedRef.on('value', async snapshot => {
     if (snapshot.val() === true) {
       alert('Sorry, this room has been deleted by the owner.');
-      joinRoom('public');
+      await joinRoom('public');
     }
   });
 }
@@ -559,8 +559,10 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
       // Then delete the entire room from Firebase
       await db.ref(`rooms/${currentRoomId}`).remove();
       
+      // Join public room (this will handle everything properly)
+      await joinRoom('public');
+      
       alert('Room deleted successfully');
-      joinRoom('public');
       roomDropdown.classList.remove('show');
     }
   }
