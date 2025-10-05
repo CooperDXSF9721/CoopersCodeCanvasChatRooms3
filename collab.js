@@ -759,7 +759,10 @@ async function loadPagesList() {
     pageListEl.innerHTML = '';
     
     if (!pages) {
-      // Create default page 1
+      // No pages exist yet - create default page 1 entry
+      await db.ref(`rooms/${currentRoomId}/pages/page1/name`).set('Page 1');
+      await db.ref(`rooms/${currentRoomId}/pages/page1/created`).set(true);
+      
       const pageBtn = createPageButton('page1', 1, 'Page 1', true);
       pageListEl.appendChild(pageBtn);
       return;
