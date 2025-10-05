@@ -531,11 +531,15 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
     clearBtn.style.display = 'inline-block';
     clearBtn.addEventListener('click', async () => {
       if (!currentRoomId) return;
+      if (!confirm('Clear entire canvas? This will remove all drawings and text.')) return;
       try {
         await Promise.all([
           linesRef.remove(),
           textsRef.remove()
         ]);
+        linesCache.length = 0;
+        textsCache.clear();
+        drawAll();
       } catch (err) {
         console.error('Failed to clear canvas data:', err);
       }
