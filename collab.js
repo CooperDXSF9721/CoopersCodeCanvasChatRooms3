@@ -93,15 +93,20 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
   linesRef = db.ref(`rooms/${roomId}/lines`);
   textsRef = db.ref(`rooms/${roomId}/texts`);
 
+  // Clear cache and canvas
   linesCache.length = 0;
   textsCache.clear();
-  drawAll();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // Set up listeners first, then load existing data
   setupFirebaseListeners();
   setupRoomDeletionListener();
   updateRoomIndicator();
 
   window.location.hash = roomId;
+  
+  // Load existing room data
+  loadRoomData();
 }
 
 function setupRoomDeletionListener() {
@@ -167,13 +172,6 @@ function setupFirebaseListeners() {
     ctx.globalCompositeOperation = 'source-over';
   });
 
-  linesRef.on('value', snapshot => {
-    if (!snapshot.exists()) {
-      linesCache.length = 0;
-      drawAll();
-    }
-  });
-
   textsRef.on('child_added', snapshot => {
     const key = snapshot.key;
     const val = snapshot.val();
@@ -193,6 +191,33 @@ function setupFirebaseListeners() {
     textsCache.delete(key);
     drawAll();
   });
+}
+
+async function loadRoomData() {
+  try {
+    // Load all existing lines
+    const linesSnapshot = await linesRef.once('value');
+    if (linesSnapshot.exists()) {
+      const linesData = linesSnapshot.val();
+      Object.values(linesData).forEach(line => {
+        linesCache.push(line);
+      });
+    }
+    
+    // Load all existing texts
+    const textsSnapshot = await textsRef.once('value');
+    if (textsSnapshot.exists()) {
+      const textsData = textsSnapshot.val();
+      Object.entries(textsData).forEach(([key, val]) => {
+        textsCache.set(key, val);
+      });
+    }
+    
+    // Redraw everything
+    drawAll();
+  } catch (err) {
+    console.error('Error loading room data:', err);
+  }
 }
 
 // ==================== Canvas Setup ====================
