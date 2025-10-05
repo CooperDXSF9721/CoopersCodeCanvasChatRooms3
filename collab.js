@@ -13,6 +13,7 @@ const db = firebase.database();
 
 // ==================== Room Management ====================
 let currentRoomId = null;
+let currentPageId = 'page1'; // Default page
 let linesRef = null;
 let textsRef = null;
 let roomDeletedRef = null;
@@ -82,8 +83,9 @@ async function joinRoom(roomId, password = null) {
   if (roomClearedRef) roomClearedRef.off();
 
   currentRoomId = roomId;
-  linesRef = db.ref(`rooms/${roomId}/lines`);
-  textsRef = db.ref(`rooms/${roomId}/texts`);
+  currentPageId = 'page1'; // Reset to page 1 when joining a new room
+  linesRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/lines`);
+  textsRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/texts`);
 
   isJoiningRoom = true;
   linesCache.length = 0;
@@ -94,6 +96,7 @@ async function joinRoom(roomId, password = null) {
   setupRoomDeletionListener();
   setupRoomClearedListener();
   updateRoomIndicator();
+  updatePageIndicator();
 
   window.location.hash = roomId;
   
@@ -114,7 +117,7 @@ function setupRoomDeletionListener() {
 }
 
 function setupRoomClearedListener() {
-  roomClearedRef = db.ref(`rooms/${currentRoomId}/cleared`);
+  roomClearedRef = db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/cleared`);
   roomClearedRef.on('value', snapshot => {
     if (!isJoiningRoom && snapshot.exists()) {
       // Canvas was cleared
@@ -123,6 +126,46 @@ function setupRoomClearedListener() {
       drawAll();
     }
   });
+}
+
+function updatePageIndicator() {
+  const indicator = document.getElementById('pageIndicator');
+  if (indicator && currentRoomId) {
+    // Get the page name from Firebase
+    db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/name`).once('value', snapshot => {
+      const pageName = snapshot.val();
+      if (pageName) {
+        indicator.textContent = pageName;
+      } else {
+        const pageNum = currentPageId.replace('page', '');
+        indicator.textContent = `Page ${pageNum}`;
+      }
+    });
+  }
+}
+
+async function switchPage(pageId) {
+  if (pageId === currentPageId) return;
+  
+  // Turn off old listeners
+  if (linesRef) linesRef.off();
+  if (textsRef) textsRef.off();
+  if (roomClearedRef) roomClearedRef.off();
+  
+  currentPageId = pageId;
+  linesRef = db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/lines`);
+  textsRef = db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/texts`);
+  
+  isJoiningRoom = true;
+  linesCache.length = 0;
+  textsCache.clear();
+  drawAll();
+  
+  setupFirebaseListeners();
+  setupRoomClearedListener();
+  updatePageIndicator();
+  
+  setTimeout(() => { isJoiningRoom = false; }, 1000);
 }
 
 function updateRoomIndicator() {
@@ -690,6 +733,168 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
   }
 });
 
+// ==================== Page Management ====================
+const pageDropdown = document.getElementById('pageDropdown');
+const pageMenuBtn = document.getElementById('pageMenuBtn');
+
+pageMenuBtn?.addEventListener('click', () => {
+  pageDropdown.classList.toggle('show');
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.page-menu-container')) {
+    pageDropdown?.classList.remove('show');
+  }
+});
+
+// Load and display pages
+async function loadPagesList() {
+  const pageListEl = document.getElementById('pagesList');
+  if (!pageListEl || !currentRoomId) return;
+  
+  try {
+    const pagesSnapshot = await db.ref(`rooms/${currentRoomId}/pages`).once('value');
+    const pages = pagesSnapshot.val();
+    
+    pageListEl.innerHTML = '';
+    
+    if (!pages) {
+      // Create default page 1
+      const pageBtn = createPageButton('page1', 1, 'Page 1', true);
+      pageListEl.appendChild(pageBtn);
+      return;
+    }
+    
+    // Get all page numbers
+    const pageIds = Object.keys(pages).sort((a, b) => {
+      const numA = parseInt(a.replace('page', ''));
+      const numB = parseInt(b.replace('page', ''));
+      return numA - numB;
+    });
+    
+    pageIds.forEach(pageId => {
+      const pageNum = parseInt(pageId.replace('page', ''));
+      const pageName = pages[pageId].name || `Page ${pageNum}`;
+      const isActive = pageId === currentPageId;
+      const pageBtn = createPageButton(pageId, pageNum, pageName, isActive);
+      pageListEl.appendChild(pageBtn);
+    });
+    
+  } catch (err) {
+    console.error('Error loading pages:', err);
+  }
+}
+
+function createPageButton(pageId, pageNum, pageName, isActive) {
+  const container = document.createElement('div');
+  container.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px;';
+  
+  const btn = document.createElement('button');
+  btn.textContent = pageName;
+  btn.className = isActive ? 'page-btn active' : 'page-btn';
+  btn.style.flex = '1';
+  btn.onclick = () => {
+    switchPage(pageId);
+    pageDropdown.classList.remove('show');
+    loadPagesList();
+  };
+  
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = '✎';
+  renameBtn.className = 'page-action-btn';
+  renameBtn.title = 'Rename page';
+  renameBtn.onclick = async (e) => {
+    e.stopPropagation();
+    const newName = prompt('Enter new page name:', pageName);
+    if (newName && newName.trim()) {
+      await db.ref(`rooms/${currentRoomId}/pages/${pageId}/name`).set(newName.trim());
+      loadPagesList();
+      if (pageId === currentPageId) {
+        updatePageIndicator();
+      }
+    }
+  };
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '✕';
+  deleteBtn.className = 'page-action-btn destructive';
+  deleteBtn.title = 'Delete page';
+  deleteBtn.onclick = async (e) => {
+    e.stopPropagation();
+    
+    // Count total pages
+    const pagesSnapshot = await db.ref(`rooms/${currentRoomId}/pages`).once('value');
+    const pages = pagesSnapshot.val();
+    const pageCount = pages ? Object.keys(pages).length : 0;
+    
+    if (pageCount <= 1) {
+      alert('Cannot delete the last page. Each room must have at least one page.');
+      return;
+    }
+    
+    if (confirm(`Delete "${pageName}"? This will permanently remove all drawings and text on this page.`)) {
+      await db.ref(`rooms/${currentRoomId}/pages/${pageId}`).remove();
+      
+      // If we deleted the current page, switch to page1
+      if (pageId === currentPageId) {
+        const remainingPages = Object.keys(pages).filter(id => id !== pageId);
+        switchPage(remainingPages[0] || 'page1');
+      }
+      
+      loadPagesList();
+    }
+  };
+  
+  container.appendChild(btn);
+  container.appendChild(renameBtn);
+  container.appendChild(deleteBtn);
+  
+  return container;
+}
+
+document.getElementById('createPageBtn')?.addEventListener('click', async () => {
+  try {
+    // Find the highest page number
+    const pagesSnapshot = await db.ref(`rooms/${currentRoomId}/pages`).once('value');
+    const pages = pagesSnapshot.val();
+    
+    let maxPageNum = 1;
+    if (pages) {
+      Object.keys(pages).forEach(pageId => {
+        const num = parseInt(pageId.replace('page', ''));
+        if (num > maxPageNum) maxPageNum = num;
+      });
+    }
+    
+    const newPageNum = maxPageNum + 1;
+    const newPageId = `page${newPageNum}`;
+    
+    // Ask for page name
+    const pageName = prompt('Enter name for the new page:', `Page ${newPageNum}`);
+    if (pageName === null) return; // User cancelled
+    
+    // Create the new page with a name
+    await db.ref(`rooms/${currentRoomId}/pages/${newPageId}/name`).set(pageName.trim() || `Page ${newPageNum}`);
+    await db.ref(`rooms/${currentRoomId}/pages/${newPageId}/created`).set(true);
+    
+    // Switch to the new page
+    switchPage(newPageId);
+    pageDropdown.classList.remove('show');
+    loadPagesList();
+    
+  } catch (err) {
+    console.error('Error creating page:', err);
+    alert('Failed to create new page. Please try again.');
+  }
+});
+
+// Refresh pages list when dropdown is opened
+pageMenuBtn?.addEventListener('click', () => {
+  if (pageDropdown.classList.contains('show')) {
+    loadPagesList();
+  }
+});
+
 // ==================== Admin ====================
 (function setupAdmin() {
   const adminKey = "cooper";
@@ -701,11 +906,11 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
       if (!confirm('Clear entire canvas? This will remove all drawings and text for everyone.')) return;
       try {
         // Set a cleared flag first
-        await db.ref(`rooms/${currentRoomId}/cleared`).set(Date.now());
+        await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/cleared`).set(Date.now());
         
         // Then remove the data from Firebase
-        await db.ref(`rooms/${currentRoomId}/lines`).remove();
-        await db.ref(`rooms/${currentRoomId}/texts`).remove();
+        await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/lines`).remove();
+        await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/texts`).remove();
         
         // Clear local cache
         linesCache.length = 0;
