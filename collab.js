@@ -28,6 +28,11 @@ function generateRoomCode() {
 }
 
 async function joinRoom(roomId, password = null, bypassPassword = false) {
+  // Don't rejoin if already in this room
+  if (currentRoomId === roomId && linesRef && textsRef) {
+    return;
+  }
+
   // Check if room has password protection (skip for public)
   if (roomId !== 'public') {
     const roomRef = db.ref(`rooms/${roomId}`);
@@ -66,6 +71,56 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
             return;
           }
           password = inputPassword;
+        }
+
+        if (password !== storedPassword) {
+          alert('Incorrect Passkey');
+          joinRoom('public');
+          return;
+        }
+      }
+    }
+  }
+
+  if (linesRef) linesRef.off();
+  if (textsRef) textsRef.off();
+  if (roomDeletedRef) roomDeletedRef.off();
+
+  currentRoomId = roomId;
+  linesRef = db.ref(`rooms/${roomId}/lines`);
+  textsRef = db.ref(`rooms/${roomId}/texts`);
+
+  // Load all data first before clearing anything
+  const [linesSnapshot, textsSnapshot] = await Promise.all([
+    linesRef.once('value'),
+    textsRef.once('value')
+  ]);
+
+  // Now clear and populate with new data
+  linesCache.length = 0;
+  textsCache.clear();
+  
+  if (linesSnapshot.exists()) {
+    Object.values(linesSnapshot.val()).forEach(line => {
+      linesCache.push(line);
+    });
+  }
+  
+  if (textsSnapshot.exists()) {
+    Object.entries(textsSnapshot.val()).forEach(([key, val]) => {
+      textsCache.set(key, val);
+    });
+  }
+  
+  // Redraw with new room data
+  drawAll();
+
+  setupFirebaseListeners();
+  setupRoomDeletionListener();
+  updateRoomIndicator();
+
+  window.location.hash = roomId;
+}
         }
 
         if (password !== storedPassword) {
@@ -559,9 +614,19 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
   if (currentRoomId && currentRoomId !== 'public') {
     const confirmDelete = confirm(`Are you sure you want to delete room ${currentRoomId}? This will kick all users from the room.`);
     if (confirmDelete) {
+      // Turn off the deletion listener BEFORE deleting to avoid triggering it
+      if (roomDeletedRef) roomDeletedRef.off();
+      
+      // Set the deleted flag to kick other users
       await db.ref(`rooms/${currentRoomId}/deleted`).set(true);
+      
+      // Wait a moment for other users to be kicked
       await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Delete the entire room from Firebase
       await db.ref(`rooms/${currentRoomId}`).remove();
+      
+      // Now join public (deletion listener is already off)
       joinRoom('public');
       roomDropdown.classList.remove('show');
     }
