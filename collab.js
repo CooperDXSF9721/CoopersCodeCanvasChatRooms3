@@ -33,10 +33,8 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     const roomRef = db.ref(`rooms/${roomId}`);
     const roomSnapshot = await roomRef.once('value');
     
-    // Check if room has any data (lines, texts, or password)
     const roomData = roomSnapshot.val();
     
-    // Check if room was deleted or doesn't exist
     if (!roomData || roomData.deleted === true) {
       alert('Room does not exist');
       joinRoom('public');
@@ -47,27 +45,21 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     const hasTexts = roomData && roomData.texts;
     const hasPassword = roomData && roomData.password;
     
-    // If room has been explicitly created (has password) or has content, it exists
-    // Otherwise, treat it as a new room
     const roomExists = hasPassword || hasLines || hasTexts;
     
     if (!roomExists && roomData === null) {
-      // Room doesn't exist at all
       alert('Room does not exist');
       joinRoom('public');
       return;
     }
     
-    // Check password protection (skip if admin bypass)
     if (!bypassPassword) {
       const passwordRef = db.ref(`rooms/${roomId}/password`);
       const passwordSnapshot = await passwordRef.once('value');
       const storedPassword = passwordSnapshot.val();
 
       if (storedPassword) {
-        // Room is password protected
         if (password === null) {
-          // Prompt for password
           const inputPassword = prompt('This room is password protected. Enter the passkey:');
           if (!inputPassword) {
             joinRoom('public');
@@ -93,15 +85,10 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
   linesRef = db.ref(`rooms/${roomId}/lines`);
   textsRef = db.ref(`rooms/${roomId}/texts`);
 
-  // Clear cache and canvas
   linesCache.length = 0;
   textsCache.clear();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Load existing room data first
-  await loadRoomData();
-  
-  // Then set up listeners for real-time updates
   setupFirebaseListeners();
   setupRoomDeletionListener();
   updateRoomIndicator();
@@ -136,7 +123,6 @@ function updateRoomIndicator() {
         roomCodeDisplay.textContent = 'You are on the public canvas';
         roomCodeDisplay.style.fontFamily = 'Inter, system-ui, sans-serif';
       }
-      // Hide delete and copy buttons on public canvas
       if (deleteBtn) deleteBtn.style.display = 'none';
       if (copyBtn) copyBtn.style.display = 'none';
     } else {
@@ -146,7 +132,6 @@ function updateRoomIndicator() {
         roomCodeDisplay.textContent = currentRoomId;
         roomCodeDisplay.style.fontFamily = "'JetBrains Mono', 'Courier New', monospace";
       }
-      // Show delete and copy buttons on private rooms
       if (deleteBtn) deleteBtn.style.display = 'block';
       if (copyBtn) copyBtn.style.display = 'block';
     }
@@ -154,10 +139,7 @@ function updateRoomIndicator() {
 }
 
 function setupFirebaseListeners() {
-  // Listen for new lines added in real-time (not initial load)
-  let initialLinesLoaded = false;
   linesRef.on('child_added', snapshot => {
-    if (!initialLinesLoaded) return; // Skip during initial load
     const line = snapshot.val();
     linesCache.push(line);
     line.points.forEach(p => {
@@ -175,10 +157,7 @@ function setupFirebaseListeners() {
     ctx.globalCompositeOperation = 'source-over';
   });
 
-  // Listen for new texts added in real-time (not initial load)
-  let initialTextsLoaded = false;
   textsRef.on('child_added', snapshot => {
-    if (!initialTextsLoaded) return; // Skip during initial load
     const key = snapshot.key;
     const val = snapshot.val();
     textsCache.set(key, val);
@@ -197,39 +176,6 @@ function setupFirebaseListeners() {
     textsCache.delete(key);
     drawAll();
   });
-  
-  // After a short delay, start listening for new additions
-  setTimeout(() => {
-    initialLinesLoaded = true;
-    initialTextsLoaded = true;
-  }, 1000);
-}
-
-async function loadRoomData() {
-  try {
-    // Load all existing lines
-    const linesSnapshot = await linesRef.once('value');
-    if (linesSnapshot.exists()) {
-      const linesData = linesSnapshot.val();
-      Object.values(linesData).forEach(line => {
-        linesCache.push(line);
-      });
-    }
-    
-    // Load all existing texts
-    const textsSnapshot = await textsRef.once('value');
-    if (textsSnapshot.exists()) {
-      const textsData = textsSnapshot.val();
-      Object.entries(textsData).forEach(([key, val]) => {
-        textsCache.set(key, val);
-      });
-    }
-    
-    // Redraw everything
-    drawAll();
-  } catch (err) {
-    console.error('Error loading room data:', err);
-  }
 }
 
 // ==================== Canvas Setup ====================
@@ -548,10 +494,8 @@ document.getElementById('createRoomBtn')?.addEventListener('click', async () => 
   const password = prompt('Set a passkey for this room (optional - leave blank for no password):');
 
   if (password && password.trim()) {
-    // Save password to Firebase
     await db.ref(`rooms/${roomId}/password`).set(password.trim());
   } else {
-    // Create an empty placeholder to mark the room as existing
     await db.ref(`rooms/${roomId}/created`).set(true);
   }
 
@@ -586,16 +530,9 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
   if (currentRoomId && currentRoomId !== 'public') {
     const confirmDelete = confirm(`Are you sure you want to delete room ${currentRoomId}? This will kick all users from the room.`);
     if (confirmDelete) {
-      // First, set the deleted flag to kick other users
       await db.ref(`rooms/${currentRoomId}/deleted`).set(true);
-      
-      // Wait a moment for other users to be kicked
       await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Then delete the entire room from Firebase
       await db.ref(`rooms/${currentRoomId}`).remove();
-      
-      // Removed the alert - just redirect to public
       joinRoom('public');
       roomDropdown.classList.remove('show');
     }
@@ -624,14 +561,12 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
       }
     });
     
-    // Create admin room management button
     const adminRoomBtn = document.createElement('button');
     adminRoomBtn.textContent = 'Manage Rooms';
     adminRoomBtn.className = 'secondary';
     adminRoomBtn.style.display = 'inline-block';
     document.getElementById('toolbar').appendChild(adminRoomBtn);
     
-    // Create admin panel
     const adminPanel = document.createElement('div');
     adminPanel.id = 'adminPanel';
     adminPanel.style.cssText = `
@@ -698,11 +633,9 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
           
           const roomData = rooms[roomId];
           const password = roomData.password || 'None';
-          const hasPassword = roomData.password ? 'Yes' : 'No';
           const lineCount = roomData.lines ? Object.keys(roomData.lines).length : 0;
           const textCount = roomData.texts ? Object.keys(roomData.texts).length : 0;
           
-          // Calculate last activity
           let lastActivity = 'Unknown';
           let lastTimestamp = 0;
           
@@ -762,7 +695,6 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
             flex: 1;
           `;
           previewBtn.onclick = () => {
-            // Store admin bypass flag in sessionStorage for the new window
             sessionStorage.setItem('adminBypass', 'true');
             sessionStorage.setItem('adminBypassRoom', roomId);
             window.open(`#${roomId}`, '_blank');
@@ -785,8 +717,7 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
               await db.ref(`rooms/${roomId}/deleted`).set(true);
               await new Promise(resolve => setTimeout(resolve, 500));
               await db.ref(`rooms/${roomId}`).remove();
-              // Removed alert - just refresh the list
-              adminRoomBtn.click(); // Refresh the list
+              adminRoomBtn.click();
             }
           };
           
@@ -806,18 +737,15 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
 
 // ==================== Initialize ====================
 window.addEventListener('load', () => {
-  // Check if this is an admin bypass from the preview button
   const adminBypass = sessionStorage.getItem('adminBypass') === 'true';
   const adminBypassRoom = sessionStorage.getItem('adminBypassRoom');
   
-  // Clear the flags after reading
   sessionStorage.removeItem('adminBypass');
   sessionStorage.removeItem('adminBypassRoom');
   
   const hashRoom = window.location.hash.substring(1);
   
   if (hashRoom) {
-    // If admin bypass is active and the room matches, bypass password
     if (adminBypass && hashRoom === adminBypassRoom) {
       joinRoom(hashRoom, null, true);
     } else {
