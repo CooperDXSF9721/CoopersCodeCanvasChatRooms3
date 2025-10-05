@@ -74,6 +74,11 @@ function generateRoomCode() {
 }
 
 async function joinRoom(roomId, password = null, bypassPassword = false) {
+  // Remove old listeners FIRST before any async operations
+  if (linesRef) linesRef.off();
+  if (textsRef) textsRef.off();
+  if (roomDeletedRef) roomDeletedRef.off();
+
   // Check if room has password protection (skip for public)
   if (roomId !== 'public') {
     const roomRef = db.ref(`rooms/${roomId}`);
@@ -124,7 +129,7 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     }
   }
 
-  // Remove old listeners
+  // Remove old listeners (do this again to be safe, now after all validation)
   if (linesRef) linesRef.off();
   if (textsRef) textsRef.off();
   if (roomDeletedRef) roomDeletedRef.off();
@@ -548,10 +553,16 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
   if (currentRoomId && currentRoomId !== 'public') {
     const confirmDelete = confirm(`Are you sure you want to delete room ${currentRoomId}? This will kick all users from the room.`);
     if (confirmDelete) {
-      await db.ref(`rooms/${currentRoomId}/deleted`).set(true);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await db.ref(`rooms/${currentRoomId}`).remove();
+      const roomToDelete = currentRoomId;
+      
+      // First, join public to disconnect from current room
       await joinRoom('public');
+      
+      // Then delete the room
+      await db.ref(`rooms/${roomToDelete}/deleted`).set(true);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await db.ref(`rooms/${roomToDelete}`).remove();
+      
       alert('Room deleted successfully');
       roomDropdown.classList.remove('show');
     }
