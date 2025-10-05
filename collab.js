@@ -96,8 +96,8 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
 
   linesCache.length = 0;
   textsCache.clear();
-  drawAll();
-
+  
+  // Don't call drawAll() here - let the Firebase listeners populate the data first
   setupFirebaseListeners();
   setupRoomDeletionListener();
   updateRoomIndicator();
