@@ -29,9 +29,6 @@ function generateRoomCode() {
 }
 
 async function joinRoom(roomId, password = null, bypassPassword = false) {
-  // Set loading flag to prevent draws during transition
-  isLoadingRoom = true;
-  
   // Check if room has password protection (skip for public)
   if (roomId !== 'public') {
     const roomRef = db.ref(`rooms/${roomId}`);
@@ -43,7 +40,6 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     // Check if room was deleted or doesn't exist
     if (!roomData || roomData.deleted === true) {
       alert('Room does not exist');
-      isLoadingRoom = false;
       joinRoom('public');
       return;
     }
@@ -60,7 +56,6 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     if (!roomExists && roomData === null) {
       // Room doesn't exist at all
       alert('Room does not exist');
-      isLoadingRoom = false;
       joinRoom('public');
       return;
     }
@@ -77,7 +72,6 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
           // Prompt for password
           const inputPassword = prompt('This room is password protected. Enter the passkey:');
           if (!inputPassword) {
-            isLoadingRoom = false;
             joinRoom('public');
             return;
           }
@@ -86,7 +80,6 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
 
         if (password !== storedPassword) {
           alert('Incorrect Passkey');
-          isLoadingRoom = false;
           joinRoom('public');
           return;
         }
@@ -124,15 +117,12 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     });
   }
 
+  // Draw the loaded content
+  drawAll();
+
   // Now set the refs and listeners for future updates
   linesRef = newLinesRef;
   textsRef = newTextsRef;
-  
-  // Allow drawing again
-  isLoadingRoom = false;
-  
-  // Draw the loaded content
-  drawAll();
   
   setupFirebaseListeners();
   setupRoomDeletionListener();
@@ -256,9 +246,6 @@ const linesCache = [];
 const textsCache = new Map();
 
 function drawAll() {
-  // Don't draw if we're in the middle of loading a room
-  if (isLoadingRoom) return;
-  
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   linesCache.forEach(line => {
     const { points, color, width, erase } = line;
