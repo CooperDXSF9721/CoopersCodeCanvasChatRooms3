@@ -17,6 +17,7 @@ let linesRef = null;
 let textsRef = null;
 let roomDeletedRef = null;
 let isAdminUser = false;
+let isLoadingRoom = false;
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -28,6 +29,9 @@ function generateRoomCode() {
 }
 
 async function joinRoom(roomId, password = null, bypassPassword = false) {
+  // Set loading flag to prevent draws during transition
+  isLoadingRoom = true;
+  
   // Check if room has password protection (skip for public)
   if (roomId !== 'public') {
     const roomRef = db.ref(`rooms/${roomId}`);
@@ -39,6 +43,7 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     // Check if room was deleted or doesn't exist
     if (!roomData || roomData.deleted === true) {
       alert('Room does not exist');
+      isLoadingRoom = false;
       joinRoom('public');
       return;
     }
@@ -55,6 +60,7 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     if (!roomExists && roomData === null) {
       // Room doesn't exist at all
       alert('Room does not exist');
+      isLoadingRoom = false;
       joinRoom('public');
       return;
     }
@@ -71,6 +77,7 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
           // Prompt for password
           const inputPassword = prompt('This room is password protected. Enter the passkey:');
           if (!inputPassword) {
+            isLoadingRoom = false;
             joinRoom('public');
             return;
           }
@@ -79,6 +86,7 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
 
         if (password !== storedPassword) {
           alert('Incorrect Passkey');
+          isLoadingRoom = false;
           joinRoom('public');
           return;
         }
@@ -116,12 +124,15 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     });
   }
 
-  // Draw the loaded content
-  drawAll();
-
   // Now set the refs and listeners for future updates
   linesRef = newLinesRef;
   textsRef = newTextsRef;
+  
+  // Allow drawing again
+  isLoadingRoom = false;
+  
+  // Draw the loaded content
+  drawAll();
   
   setupFirebaseListeners();
   setupRoomDeletionListener();
@@ -175,28 +186,19 @@ function updateRoomIndicator() {
 }
 
 function setupFirebaseListeners() {
-  // Use 'once' to load existing data, then 'on' for new data
-  linesRef.once('value', snapshot => {
-    if (snapshot.exists()) {
-      snapshot.forEach(childSnapshot => {
-        const line = childSnapshot.val();
-        linesCache.push(line);
-      });
-      drawAll();
-    }
-  });
-  
+  // Listen for new lines added after joining
   linesRef.on('child_added', snapshot => {
     const line = snapshot.val();
-    // Check if this line is already in cache (from the 'once' call)
-    const alreadyExists = linesCache.some(l => 
-      l.points && line.points && 
-      l.points.length === line.points.length &&
-      l.points[0]?.x === line.points[0]?.x &&
-      l.points[0]?.y === line.points[0]?.y
-    );
+    const key = snapshot.key;
     
-    if (!alreadyExists) {
+    // Check if already in cache by checking if any line has the same key
+    const exists = linesCache.some((l, idx) => {
+      // Firebase doesn't give us the key in the value, so we need another way
+      // Just check if this exact line data already exists
+      return JSON.stringify(l) === JSON.stringify(line);
+    });
+    
+    if (!exists) {
       linesCache.push(line);
       line.points.forEach(p => {
         ctx.beginPath();
@@ -217,15 +219,6 @@ function setupFirebaseListeners() {
   linesRef.on('value', snapshot => {
     if (!snapshot.exists()) {
       linesCache.length = 0;
-      drawAll();
-    }
-  });
-
-  textsRef.once('value', snapshot => {
-    if (snapshot.exists()) {
-      snapshot.forEach(childSnapshot => {
-        textsCache.set(childSnapshot.key, childSnapshot.val());
-      });
       drawAll();
     }
   });
@@ -263,6 +256,9 @@ const linesCache = [];
 const textsCache = new Map();
 
 function drawAll() {
+  // Don't draw if we're in the middle of loading a room
+  if (isLoadingRoom) return;
+  
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   linesCache.forEach(line => {
     const { points, color, width, erase } = line;
