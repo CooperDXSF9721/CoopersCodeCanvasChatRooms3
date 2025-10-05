@@ -85,9 +85,30 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
   linesRef = db.ref(`rooms/${roomId}/lines`);
   textsRef = db.ref(`rooms/${roomId}/texts`);
 
+  // Load all data first before clearing anything
+  const [linesSnapshot, textsSnapshot] = await Promise.all([
+    linesRef.once('value'),
+    textsRef.once('value')
+  ]);
+
+  // Now clear and populate with new data
   linesCache.length = 0;
   textsCache.clear();
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  if (linesSnapshot.exists()) {
+    Object.values(linesSnapshot.val()).forEach(line => {
+      linesCache.push(line);
+    });
+  }
+  
+  if (textsSnapshot.exists()) {
+    Object.entries(textsSnapshot.val()).forEach(([key, val]) => {
+      textsCache.set(key, val);
+    });
+  }
+  
+  // Redraw with new room data
+  drawAll();
 
   setupFirebaseListeners();
   setupRoomDeletionListener();
@@ -139,7 +160,11 @@ function updateRoomIndicator() {
 }
 
 function setupFirebaseListeners() {
+  // Only listen for NEW additions after initial load
+  let initialLoad = true;
+  
   linesRef.on('child_added', snapshot => {
+    if (initialLoad) return;
     const line = snapshot.val();
     linesCache.push(line);
     line.points.forEach(p => {
@@ -156,8 +181,12 @@ function setupFirebaseListeners() {
     });
     ctx.globalCompositeOperation = 'source-over';
   });
+  
+  // Mark initial load as complete after a brief delay
+  setTimeout(() => { initialLoad = false; }, 500);
 
   textsRef.on('child_added', snapshot => {
+    if (initialLoad) return;
     const key = snapshot.key;
     const val = snapshot.val();
     textsCache.set(key, val);
