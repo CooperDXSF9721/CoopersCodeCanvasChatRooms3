@@ -84,6 +84,15 @@ async function joinRoom(roomId, password = null) {
 
   currentRoomId = roomId;
   currentPageId = 'page1'; // Reset to page 1 when joining a new room
+  
+  // Ensure page1 exists
+  const page1Ref = db.ref(`rooms/${roomId}/pages/page1`);
+  const page1Snapshot = await page1Ref.once('value');
+  if (!page1Snapshot.exists()) {
+    await db.ref(`rooms/${roomId}/pages/page1/name`).set('Page 1');
+    await db.ref(`rooms/${roomId}/pages/page1/created`).set(true);
+  }
+  
   linesRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/lines`);
   textsRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/texts`);
 
