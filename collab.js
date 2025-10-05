@@ -86,18 +86,43 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
     }
   }
 
+  // Turn off old listeners
   if (linesRef) linesRef.off();
   if (textsRef) textsRef.off();
   if (roomDeletedRef) roomDeletedRef.off();
 
+  // Set new room
   currentRoomId = roomId;
-  linesRef = db.ref(`rooms/${roomId}/lines`);
-  textsRef = db.ref(`rooms/${roomId}/texts`);
+  const newLinesRef = db.ref(`rooms/${roomId}/lines`);
+  const newTextsRef = db.ref(`rooms/${roomId}/texts`);
 
+  // Load initial data BEFORE clearing caches
+  const linesSnapshot = await newLinesRef.once('value');
+  const textsSnapshot = await newTextsRef.once('value');
+
+  // Now clear and populate
   linesCache.length = 0;
   textsCache.clear();
   
-  // Don't call drawAll() here - let the Firebase listeners populate the data first
+  if (linesSnapshot.exists()) {
+    linesSnapshot.forEach(childSnapshot => {
+      linesCache.push(childSnapshot.val());
+    });
+  }
+  
+  if (textsSnapshot.exists()) {
+    textsSnapshot.forEach(childSnapshot => {
+      textsCache.set(childSnapshot.key, childSnapshot.val());
+    });
+  }
+
+  // Draw the loaded content
+  drawAll();
+
+  // Now set the refs and listeners for future updates
+  linesRef = newLinesRef;
+  textsRef = newTextsRef;
+  
   setupFirebaseListeners();
   setupRoomDeletionListener();
   updateRoomIndicator();
@@ -150,22 +175,43 @@ function updateRoomIndicator() {
 }
 
 function setupFirebaseListeners() {
+  // Use 'once' to load existing data, then 'on' for new data
+  linesRef.once('value', snapshot => {
+    if (snapshot.exists()) {
+      snapshot.forEach(childSnapshot => {
+        const line = childSnapshot.val();
+        linesCache.push(line);
+      });
+      drawAll();
+    }
+  });
+  
   linesRef.on('child_added', snapshot => {
     const line = snapshot.val();
-    linesCache.push(line);
-    line.points.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, line.width / 2, 0, Math.PI * 2);
-      if (line.erase) { 
-        ctx.globalCompositeOperation = 'destination-out'; 
-        ctx.fillStyle = 'rgba(0,0,0,1)'; 
-      } else { 
-        ctx.globalCompositeOperation = 'source-over'; 
-        ctx.fillStyle = line.color; 
-      }
-      ctx.fill();
-    });
-    ctx.globalCompositeOperation = 'source-over';
+    // Check if this line is already in cache (from the 'once' call)
+    const alreadyExists = linesCache.some(l => 
+      l.points && line.points && 
+      l.points.length === line.points.length &&
+      l.points[0]?.x === line.points[0]?.x &&
+      l.points[0]?.y === line.points[0]?.y
+    );
+    
+    if (!alreadyExists) {
+      linesCache.push(line);
+      line.points.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, line.width / 2, 0, Math.PI * 2);
+        if (line.erase) { 
+          ctx.globalCompositeOperation = 'destination-out'; 
+          ctx.fillStyle = 'rgba(0,0,0,1)'; 
+        } else { 
+          ctx.globalCompositeOperation = 'source-over'; 
+          ctx.fillStyle = line.color; 
+        }
+        ctx.fill();
+      });
+      ctx.globalCompositeOperation = 'source-over';
+    }
   });
 
   linesRef.on('value', snapshot => {
@@ -175,11 +221,22 @@ function setupFirebaseListeners() {
     }
   });
 
+  textsRef.once('value', snapshot => {
+    if (snapshot.exists()) {
+      snapshot.forEach(childSnapshot => {
+        textsCache.set(childSnapshot.key, childSnapshot.val());
+      });
+      drawAll();
+    }
+  });
+
   textsRef.on('child_added', snapshot => {
     const key = snapshot.key;
     const val = snapshot.val();
-    textsCache.set(key, val);
-    drawAll();
+    if (!textsCache.has(key)) {
+      textsCache.set(key, val);
+      drawAll();
+    }
   });
 
   textsRef.on('child_changed', snapshot => {
