@@ -558,7 +558,7 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
       // Then delete the entire room from Firebase
       await db.ref(`rooms/${currentRoomId}`).remove();
       
-      alert('Room deleted successfully');
+      // Removed the alert - just redirect to public
       joinRoom('public');
       roomDropdown.classList.remove('show');
     }
@@ -748,7 +748,7 @@ document.getElementById('deleteRoomBtn')?.addEventListener('click', async () => 
               await db.ref(`rooms/${roomId}/deleted`).set(true);
               await new Promise(resolve => setTimeout(resolve, 500));
               await db.ref(`rooms/${roomId}`).remove();
-              alert(`Room ${roomId} deleted`);
+              // Removed alert - just refresh the list
               adminRoomBtn.click(); // Refresh the list
             }
           };
