@@ -98,15 +98,15 @@ async function joinRoom(roomId, password = null, bypassPassword = false) {
   textsCache.clear();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Set up listeners first, then load existing data
+  // Load existing room data first
+  await loadRoomData();
+  
+  // Then set up listeners for real-time updates
   setupFirebaseListeners();
   setupRoomDeletionListener();
   updateRoomIndicator();
 
   window.location.hash = roomId;
-  
-  // Load existing room data
-  loadRoomData();
 }
 
 function setupRoomDeletionListener() {
@@ -154,7 +154,10 @@ function updateRoomIndicator() {
 }
 
 function setupFirebaseListeners() {
+  // Listen for new lines added in real-time (not initial load)
+  let initialLinesLoaded = false;
   linesRef.on('child_added', snapshot => {
+    if (!initialLinesLoaded) return; // Skip during initial load
     const line = snapshot.val();
     linesCache.push(line);
     line.points.forEach(p => {
@@ -172,7 +175,10 @@ function setupFirebaseListeners() {
     ctx.globalCompositeOperation = 'source-over';
   });
 
+  // Listen for new texts added in real-time (not initial load)
+  let initialTextsLoaded = false;
   textsRef.on('child_added', snapshot => {
+    if (!initialTextsLoaded) return; // Skip during initial load
     const key = snapshot.key;
     const val = snapshot.val();
     textsCache.set(key, val);
@@ -191,6 +197,12 @@ function setupFirebaseListeners() {
     textsCache.delete(key);
     drawAll();
   });
+  
+  // After a short delay, start listening for new additions
+  setTimeout(() => {
+    initialLinesLoaded = true;
+    initialTextsLoaded = true;
+  }, 1000);
 }
 
 async function loadRoomData() {
