@@ -866,6 +866,21 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   `;
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
+    
+    // Check if this is the last page
+    try {
+      const pagesSnapshot = await db.ref(`rooms/${currentRoomId}/pages`).once('value');
+      const pages = pagesSnapshot.val();
+      const pageCount = pages ? Object.keys(pages).length : 0;
+      
+      if (pageCount <= 1) {
+        alert('Sorry, you must have at least one page.');
+        return;
+      }
+    } catch (err) {
+      console.error('Error checking page count:', err);
+    }
+    
     if (confirm(`Are you sure you want to delete "${pageName}"? This will remove all content on this page.`)) {
       try {
         // If deleting the current page, switch to page 1 first
