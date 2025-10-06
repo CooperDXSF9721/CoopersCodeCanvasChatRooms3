@@ -128,11 +128,23 @@ function setupRoomClearedListener() {
   });
 }
 
-function updatePageIndicator() {
+async function updatePageIndicator() {
   const indicator = document.getElementById('pageIndicator');
-  if (indicator) {
-    const pageNum = currentPageId.replace('page', '');
-    indicator.textContent = `Page ${pageNum}`;
+  if (indicator && currentRoomId) {
+    try {
+      const pageSnapshot = await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/name`).once('value');
+      const customName = pageSnapshot.val();
+      
+      if (customName) {
+        indicator.textContent = customName;
+      } else {
+        const pageNum = currentPageId.replace('page', '');
+        indicator.textContent = `Page ${pageNum}`;
+      }
+    } catch (err) {
+      const pageNum = currentPageId.replace('page', '');
+      indicator.textContent = `Page ${pageNum}`;
+    }
   }
 }
 
@@ -752,7 +764,7 @@ async function loadPagesList() {
     
     if (!pages) {
       // Create default page 1
-      const pageBtn = createPageButton('page1', 1, true);
+      const pageBtn = createPageButton('page1', 1, 'Page 1', true);
       pageListEl.appendChild(pageBtn);
       return;
     }
@@ -767,7 +779,8 @@ async function loadPagesList() {
     pageIds.forEach(pageId => {
       const pageNum = parseInt(pageId.replace('page', ''));
       const isActive = pageId === currentPageId;
-      const pageBtn = createPageButton(pageId, pageNum, isActive);
+      const pageName = pages[pageId].name || `Page ${pageNum}`;
+      const pageBtn = createPageButton(pageId, pageNum, pageName, isActive);
       pageListEl.appendChild(pageBtn);
     });
     
@@ -776,16 +789,91 @@ async function loadPagesList() {
   }
 }
 
-function createPageButton(pageId, pageNum, isActive) {
+function createPageButton(pageId, pageNum, pageName, isActive) {
+  const container = document.createElement('div');
+  container.style.cssText = `
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  `;
+  
   const btn = document.createElement('button');
-  btn.textContent = `Page ${pageNum}`;
+  btn.textContent = pageName;
   btn.className = isActive ? 'page-btn active' : 'page-btn';
+  btn.style.flex = '1';
   btn.onclick = () => {
     switchPage(pageId);
     pageDropdown.classList.remove('show');
-    loadPagesList(); // Refresh list to update active state
+    loadPagesList();
   };
-  return btn;
+  
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = '✏️';
+  renameBtn.title = 'Rename page';
+  renameBtn.style.cssText = `
+    padding: 8px 12px;
+    background: hsl(220, 90%, 56%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    min-width: 40px;
+  `;
+  renameBtn.onclick = async (e) => {
+    e.stopPropagation();
+    const newName = prompt(`Enter new name for this page:`, pageName);
+    if (newName && newName.trim()) {
+      try {
+        await db.ref(`rooms/${currentRoomId}/pages/${pageId}/name`).set(newName.trim());
+        loadPagesList();
+        if (pageId === currentPageId) {
+          updatePageIndicator();
+        }
+      } catch (err) {
+        console.error('Error renaming page:', err);
+        alert('Failed to rename page. Please try again.');
+      }
+    }
+  };
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '🗑️';
+  deleteBtn.title = 'Delete page';
+  deleteBtn.style.cssText = `
+    padding: 8px 12px;
+    background: hsl(0, 84%, 48%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    min-width: 40px;
+  `;
+  deleteBtn.onclick = async (e) => {
+    e.stopPropagation();
+    if (confirm(`Are you sure you want to delete "${pageName}"? This will remove all content on this page.`)) {
+      try {
+        // If deleting the current page, switch to page 1 first
+        if (pageId === currentPageId) {
+          await switchPage('page1');
+        }
+        
+        await db.ref(`rooms/${currentRoomId}/pages/${pageId}`).remove();
+        loadPagesList();
+      } catch (err) {
+        console.error('Error deleting page:', err);
+        alert('Failed to delete page. Please try again.');
+      }
+    }
+  };
+  
+  container.appendChild(btn);
+  container.appendChild(renameBtn);
+  container.appendChild(deleteBtn);
+  
+  return container;
 }
 
 document.getElementById('createPageBtn')?.addEventListener('click', async () => {
