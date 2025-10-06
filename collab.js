@@ -795,6 +795,8 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   btn.style.flex = '1';
   btn.style.fontSize = '16px';
   btn.style.fontWeight = '600';
+  btn.style.textAlign = 'left';
+  btn.style.paddingLeft = '12px';
   btn.onclick = () => {
     switchPage(pageId);
     pageDropdown.classList.remove('show');
@@ -813,6 +815,7 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
     border-radius: 6px;
     cursor: pointer;
     font-size: 12px;
+    white-space: nowrap;
   `;
   renameBtn.onclick = async (e) => {
     e.stopPropagation();
@@ -830,7 +833,7 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   
   // Delete button
   const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = 'Delete';
+  deleteBtn.textContent = '🗑️';
   deleteBtn.title = 'Delete page';
   deleteBtn.style.cssText = `
     padding: 6px 10px;
@@ -839,7 +842,8 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
     border: 1px solid hsl(0, 60%, 35%);
     border-radius: 6px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
+    min-width: 38px;
   `;
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
