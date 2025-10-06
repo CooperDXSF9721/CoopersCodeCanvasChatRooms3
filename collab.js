@@ -638,9 +638,38 @@ function findEmptySpace(textWidth, textHeight) {
   };
 }
 
+function containsProfanity(text) {
+  // List of profane words to filter
+  const profanityList = [
+    'fuck', 'shit', 'bitch', 'ass', 'damn', 'hell', 'crap',
+    'bastard', 'dick', 'cock', 'pussy', 'cunt', 'whore', 'slut',
+    'fag', 'nigger', 'nigga', 'retard', 'piss', 'asshole', 'vagina'
+  ];
+  
+  const lowerText = text.toLowerCase();
+  
+  // Check for exact matches and partial matches
+  for (let word of profanityList) {
+    // Check if the word appears as a whole word or part of a word
+    const regex = new RegExp('\\b' + word + '\\b|' + word, 'i');
+    if (regex.test(lowerText)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 function addTextToCanvas() {
   const content = (freeTextInput.value || '').trim();
   if (!content || !currentRoomId) return;
+  
+  // Check for profanity only in public room
+  if (currentRoomId === 'public' && containsProfanity(content)) {
+    alert('Your text contains inappropriate language. Please use respectful language.');
+    return;
+  }
+  
   const size = getTextSize();
   const font = getTextFont();
   
