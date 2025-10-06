@@ -792,11 +792,14 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   const btn = document.createElement('button');
   btn.textContent = pageName;
   btn.className = isActive ? 'page-btn active' : 'page-btn';
-  btn.style.flex = '1';
-  btn.style.fontSize = '16px';
-  btn.style.fontWeight = '600';
-  btn.style.textAlign = 'left';
-  btn.style.paddingLeft = '12px';
+  btn.style.cssText = `
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+    padding: 10px 14px;
+    min-width: 0;
+  `;
   btn.onclick = () => {
     switchPage(pageId);
     pageDropdown.classList.remove('show');
@@ -808,14 +811,15 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   renameBtn.textContent = 'Rename';
   renameBtn.title = 'Rename page';
   renameBtn.style.cssText = `
-    padding: 6px 10px;
+    padding: 8px 10px;
     background: hsl(217, 20%, 24%);
     color: hsl(217, 10%, 88%);
     border: 1px solid hsl(217, 20%, 35%);
     border-radius: 6px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     white-space: nowrap;
+    height: 34px;
   `;
   renameBtn.onclick = async (e) => {
     e.stopPropagation();
@@ -836,14 +840,15 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   deleteBtn.textContent = '🗑️';
   deleteBtn.title = 'Delete page';
   deleteBtn.style.cssText = `
-    padding: 6px 10px;
+    padding: 8px 10px;
     background: hsl(0, 60%, 45%);
     color: white;
     border: 1px solid hsl(0, 60%, 35%);
     border-radius: 6px;
     cursor: pointer;
-    font-size: 14px;
-    min-width: 38px;
+    font-size: 13px;
+    height: 34px;
+    min-width: 42px;
   `;
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
