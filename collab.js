@@ -166,7 +166,6 @@ function updateRoomIndicator() {
   const roomCodeDisplay = document.getElementById('roomCodeDisplay');
   const deleteBtn = document.getElementById('deleteRoomBtn');
   const copyBtn = document.getElementById('copyRoomBtn');
-  const pageMenuBtn = document.getElementById('pageMenuBtn');
 
   if (indicator && currentRoomId) {
     if (currentRoomId === 'public') {
@@ -178,7 +177,6 @@ function updateRoomIndicator() {
       }
       if (deleteBtn) deleteBtn.style.display = 'none';
       if (copyBtn) copyBtn.style.display = 'none';
-      if (pageMenuBtn) pageMenuBtn.style.display = 'none';
     } else {
       indicator.textContent = currentRoomId;
       menuBtn?.classList.remove('public');
@@ -188,7 +186,6 @@ function updateRoomIndicator() {
       }
       if (deleteBtn) deleteBtn.style.display = 'block';
       if (copyBtn) copyBtn.style.display = 'block';
-      if (pageMenuBtn) pageMenuBtn.style.display = 'inline-block';
     }
   }
 }
@@ -792,18 +789,7 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   const btn = document.createElement('button');
   btn.textContent = pageName;
   btn.className = isActive ? 'page-btn active' : 'page-btn';
-  btn.style.cssText = `
-    flex: 1;
-    font-size: 15px;
-    font-weight: 600;
-    text-align: left;
-    padding: 10px 14px;
-    min-width: 0;
-    height: 38px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  `;
+  btn.style.flex = '1';
   btn.onclick = () => {
     switchPage(pageId);
     pageDropdown.classList.remove('show');
@@ -815,19 +801,13 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   renameBtn.textContent = '✏️';
   renameBtn.title = 'Rename page';
   renameBtn.style.cssText = `
-    padding: 0;
+    padding: 8px 12px;
     background: hsl(217, 20%, 24%);
     color: hsl(217, 10%, 88%);
     border: 1px solid hsl(217, 20%, 35%);
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 16px;
-    width: 38px;
-    height: 38px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    font-size: 14px;
   `;
   renameBtn.onclick = async (e) => {
     e.stopPropagation();
@@ -848,19 +828,13 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   deleteBtn.textContent = '🗑️';
   deleteBtn.title = 'Delete page';
   deleteBtn.style.cssText = `
-    padding: 0;
+    padding: 8px 12px;
     background: hsl(0, 60%, 45%);
     color: white;
     border: 1px solid hsl(0, 60%, 35%);
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 16px;
-    width: 38px;
-    height: 38px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    font-size: 14px;
   `;
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
