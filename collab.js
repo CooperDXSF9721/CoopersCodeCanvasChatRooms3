@@ -166,6 +166,7 @@ function updateRoomIndicator() {
   const roomCodeDisplay = document.getElementById('roomCodeDisplay');
   const deleteBtn = document.getElementById('deleteRoomBtn');
   const copyBtn = document.getElementById('copyRoomBtn');
+  const pageMenuBtn = document.getElementById('pageMenuBtn');
 
   if (indicator && currentRoomId) {
     if (currentRoomId === 'public') {
@@ -177,6 +178,7 @@ function updateRoomIndicator() {
       }
       if (deleteBtn) deleteBtn.style.display = 'none';
       if (copyBtn) copyBtn.style.display = 'none';
+      if (pageMenuBtn) pageMenuBtn.style.display = 'none';
     } else {
       indicator.textContent = currentRoomId;
       menuBtn?.classList.remove('public');
@@ -186,6 +188,7 @@ function updateRoomIndicator() {
       }
       if (deleteBtn) deleteBtn.style.display = 'block';
       if (copyBtn) copyBtn.style.display = 'block';
+      if (pageMenuBtn) pageMenuBtn.style.display = 'inline-block';
     }
   }
 }
@@ -790,6 +793,8 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   btn.textContent = pageName;
   btn.className = isActive ? 'page-btn active' : 'page-btn';
   btn.style.flex = '1';
+  btn.style.fontSize = '16px';
+  btn.style.fontWeight = '600';
   btn.onclick = () => {
     switchPage(pageId);
     pageDropdown.classList.remove('show');
@@ -798,16 +803,16 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   
   // Rename button
   const renameBtn = document.createElement('button');
-  renameBtn.textContent = '✏️';
+  renameBtn.textContent = 'Rename';
   renameBtn.title = 'Rename page';
   renameBtn.style.cssText = `
-    padding: 8px 12px;
+    padding: 6px 10px;
     background: hsl(217, 20%, 24%);
     color: hsl(217, 10%, 88%);
     border: 1px solid hsl(217, 20%, 35%);
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12px;
   `;
   renameBtn.onclick = async (e) => {
     e.stopPropagation();
@@ -825,16 +830,16 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   
   // Delete button
   const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '🗑️';
+  deleteBtn.textContent = 'Delete';
   deleteBtn.title = 'Delete page';
   deleteBtn.style.cssText = `
-    padding: 8px 12px;
+    padding: 6px 10px;
     background: hsl(0, 60%, 45%);
     color: white;
     border: 1px solid hsl(0, 60%, 35%);
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12px;
   `;
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
