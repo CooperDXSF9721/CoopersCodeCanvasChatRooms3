@@ -83,26 +83,18 @@ async function joinRoom(roomId, password = null) {
   if (roomClearedRef) roomClearedRef.off();
 
   currentRoomId = roomId;
+  currentPageId = 'page1'; // Reset to page 1 when joining a new room
   
-  // For public room, use old structure without pages
-  if (roomId === 'public') {
-    linesRef = db.ref(`rooms/${roomId}/lines`);
-    textsRef = db.ref(`rooms/${roomId}/texts`);
-  } else {
-    // For private rooms, use page structure
-    currentPageId = 'page1';
-    
-    // Ensure page1 exists
-    const page1Ref = db.ref(`rooms/${roomId}/pages/page1`);
-    const page1Snapshot = await page1Ref.once('value');
-    if (!page1Snapshot.exists()) {
-      await db.ref(`rooms/${roomId}/pages/page1/name`).set('Page 1');
-      await db.ref(`rooms/${roomId}/pages/page1/created`).set(true);
-    }
-    
-    linesRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/lines`);
-    textsRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/texts`);
+  // Ensure page1 exists
+  const page1Ref = db.ref(`rooms/${roomId}/pages/page1`);
+  const page1Snapshot = await page1Ref.once('value');
+  if (!page1Snapshot.exists()) {
+    await db.ref(`rooms/${roomId}/pages/page1/name`).set('Page 1');
+    await db.ref(`rooms/${roomId}/pages/page1/created`).set(true);
   }
+  
+  linesRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/lines`);
+  textsRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/texts`);
 
   isJoiningRoom = true;
   linesCache.length = 0;
@@ -113,9 +105,7 @@ async function joinRoom(roomId, password = null) {
   setupRoomDeletionListener();
   setupRoomClearedListener();
   updateRoomIndicator();
-  if (roomId !== 'public') {
-    updatePageIndicator();
-  }
+  updatePageIndicator();
 
   window.location.hash = roomId;
   
@@ -136,12 +126,7 @@ function setupRoomDeletionListener() {
 }
 
 function setupRoomClearedListener() {
-  if (currentRoomId === 'public') {
-    roomClearedRef = db.ref(`rooms/${currentRoomId}/cleared`);
-  } else {
-    roomClearedRef = db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/cleared`);
-  }
-  
+  roomClearedRef = db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/cleared`);
   roomClearedRef.on('value', snapshot => {
     if (!isJoiningRoom && snapshot.exists()) {
       // Canvas was cleared
@@ -637,7 +622,12 @@ function findEmptySpace(textWidth, textHeight) {
     y: canvas.height / 2
   };
 }
-  function containsProfanity(text) { // List of profane words to filter const profanityList = []; const lowerText = text.toLowerCase(); // Check for exact matches and partial matches for (let word of profanityList) { // Check if the word appears as a whole word or part of a word const regex = new RegExp('\\b' + word + '\\b|' + word, 'i'); if (regex.test(lowerText)) { return true; } } return false; } function addTextToCanvas() { const content = (freeTextInput.value || '').trim(); if (!content || !currentRoomId) return; // Check for profanity only in public room if (currentRoomId === 'public' && containsProfanity(content)) { alert('Your text contains inappropriate language. Please use respectful language.'); return; } const size = getTextSize(); const font = getTextFont();
+
+function addTextToCanvas() {
+  const content = (freeTextInput.value || '').trim();
+  if (!content || !currentRoomId) return;
+  const size = getTextSize();
+  const font = getTextFont();
   
   // Measure the text to find appropriate empty space
   ctx.font = `${size}px ${font}`;
@@ -915,7 +905,7 @@ document.getElementById('createPageBtn')?.addEventListener('click', async () => 
 
 // Refresh pages list when dropdown is opened
 pageMenuBtn?.addEventListener('click', () => {
-  if (currentRoomId !== 'public' && pageDropdown.classList.contains('show')) {
+  if (pageDropdown.classList.contains('show')) {
     loadPagesList();
   }
 });
@@ -930,21 +920,12 @@ pageMenuBtn?.addEventListener('click', () => {
       if (!currentRoomId) return;
       if (!confirm('Clear entire canvas? This will remove all drawings and text for everyone.')) return;
       try {
-        if (currentRoomId === 'public') {
-          // Set a cleared flag first
-          await db.ref(`rooms/${currentRoomId}/cleared`).set(Date.now());
-          
-          // Then remove the data from Firebase
-          await db.ref(`rooms/${currentRoomId}/lines`).remove();
-          await db.ref(`rooms/${currentRoomId}/texts`).remove();
-        } else {
-          // Set a cleared flag first
-          await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/cleared`).set(Date.now());
-          
-          // Then remove the data from Firebase
-          await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/lines`).remove();
-          await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/texts`).remove();
-        }
+        // Set a cleared flag first
+        await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/cleared`).set(Date.now());
+        
+        // Then remove the data from Firebase
+        await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/lines`).remove();
+        await db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/texts`).remove();
         
         // Clear local cache
         linesCache.length = 0;
