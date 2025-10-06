@@ -808,18 +808,22 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   
   // Rename button
   const renameBtn = document.createElement('button');
-  renameBtn.textContent = 'Rename';
+  renameBtn.textContent = '✏️';
   renameBtn.title = 'Rename page';
   renameBtn.style.cssText = `
-    padding: 8px 10px;
+    padding: 0;
     background: hsl(217, 20%, 24%);
     color: hsl(217, 10%, 88%);
     border: 1px solid hsl(217, 20%, 35%);
     border-radius: 6px;
     cursor: pointer;
-    font-size: 11px;
-    white-space: nowrap;
-    height: 34px;
+    font-size: 16px;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   `;
   renameBtn.onclick = async (e) => {
     e.stopPropagation();
@@ -840,15 +844,19 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
   deleteBtn.textContent = '🗑️';
   deleteBtn.title = 'Delete page';
   deleteBtn.style.cssText = `
-    padding: 8px 10px;
+    padding: 0;
     background: hsl(0, 60%, 45%);
     color: white;
     border: 1px solid hsl(0, 60%, 35%);
     border-radius: 6px;
     cursor: pointer;
-    font-size: 13px;
-    height: 34px;
-    min-width: 42px;
+    font-size: 16px;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   `;
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
