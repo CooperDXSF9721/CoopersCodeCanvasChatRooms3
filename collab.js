@@ -84,15 +84,6 @@ async function joinRoom(roomId, password = null) {
 
   currentRoomId = roomId;
   currentPageId = 'page1'; // Reset to page 1 when joining a new room
-  
-  // Ensure page1 exists
-  const page1Ref = db.ref(`rooms/${roomId}/pages/page1`);
-  const page1Snapshot = await page1Ref.once('value');
-  if (!page1Snapshot.exists()) {
-    await db.ref(`rooms/${roomId}/pages/page1/name`).set('Page 1');
-    await db.ref(`rooms/${roomId}/pages/page1/created`).set(true);
-  }
-  
   linesRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/lines`);
   textsRef = db.ref(`rooms/${roomId}/pages/${currentPageId}/texts`);
 
@@ -139,17 +130,9 @@ function setupRoomClearedListener() {
 
 function updatePageIndicator() {
   const indicator = document.getElementById('pageIndicator');
-  if (indicator && currentRoomId) {
-    // Get the page name from Firebase
-    db.ref(`rooms/${currentRoomId}/pages/${currentPageId}/name`).once('value', snapshot => {
-      const pageName = snapshot.val();
-      if (pageName) {
-        indicator.textContent = pageName;
-      } else {
-        const pageNum = currentPageId.replace('page', '');
-        indicator.textContent = `Page ${pageNum}`;
-      }
-    });
+  if (indicator) {
+    const pageNum = currentPageId.replace('page', '');
+    indicator.textContent = `Page ${pageNum}`;
   }
 }
 
@@ -183,7 +166,6 @@ function updateRoomIndicator() {
   const roomCodeDisplay = document.getElementById('roomCodeDisplay');
   const deleteBtn = document.getElementById('deleteRoomBtn');
   const copyBtn = document.getElementById('copyRoomBtn');
-  const pageMenuContainer = document.querySelector('.page-menu-container');
 
   if (indicator && currentRoomId) {
     if (currentRoomId === 'public') {
@@ -195,7 +177,6 @@ function updateRoomIndicator() {
       }
       if (deleteBtn) deleteBtn.style.display = 'none';
       if (copyBtn) copyBtn.style.display = 'none';
-      if (pageMenuContainer) pageMenuContainer.style.display = 'none';
     } else {
       indicator.textContent = currentRoomId;
       menuBtn?.classList.remove('public');
@@ -205,7 +186,6 @@ function updateRoomIndicator() {
       }
       if (deleteBtn) deleteBtn.style.display = 'block';
       if (copyBtn) copyBtn.style.display = 'block';
-      if (pageMenuContainer) pageMenuContainer.style.display = 'block';
     }
   }
 }
@@ -771,10 +751,7 @@ async function loadPagesList() {
     pageListEl.innerHTML = '';
     
     if (!pages) {
-      // No pages exist yet - create default page 1 entry
-      await db.ref(`rooms/${currentRoomId}/pages/page1/name`).set('Page 1');
-      await db.ref(`rooms/${currentRoomId}/pages/page1/created`).set(true);
-      
+      // Create default page 1
       const pageBtn = createPageButton('page1', 1, 'Page 1', true);
       pageListEl.appendChild(pageBtn);
       return;
@@ -789,8 +766,8 @@ async function loadPagesList() {
     
     pageIds.forEach(pageId => {
       const pageNum = parseInt(pageId.replace('page', ''));
-      const pageName = pages[pageId].name || `Page ${pageNum}`;
       const isActive = pageId === currentPageId;
+      const pageName = pages[pageId]?.name || `Page ${pageNum}`;
       const pageBtn = createPageButton(pageId, pageNum, pageName, isActive);
       pageListEl.appendChild(pageBtn);
     });
@@ -802,7 +779,12 @@ async function loadPagesList() {
 
 function createPageButton(pageId, pageNum, pageName, isActive) {
   const container = document.createElement('div');
-  container.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px;';
+  container.style.cssText = `
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  `;
   
   const btn = document.createElement('button');
   btn.textContent = pageName;
@@ -814,26 +796,46 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
     loadPagesList();
   };
   
+  // Rename button
   const renameBtn = document.createElement('button');
-  renameBtn.textContent = '✎';
-  renameBtn.className = 'page-action-btn';
+  renameBtn.textContent = '✏️';
   renameBtn.title = 'Rename page';
+  renameBtn.style.cssText = `
+    padding: 8px 12px;
+    background: hsl(217, 20%, 24%);
+    color: hsl(217, 10%, 88%);
+    border: 1px solid hsl(217, 20%, 35%);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+  `;
   renameBtn.onclick = async (e) => {
     e.stopPropagation();
-    const newName = prompt('Enter new page name:', pageName);
+    const newName = prompt(`Enter new name for ${pageName}:`, pageName);
     if (newName && newName.trim()) {
-      await db.ref(`rooms/${currentRoomId}/pages/${pageId}/name`).set(newName.trim());
-      loadPagesList();
-      if (pageId === currentPageId) {
-        updatePageIndicator();
+      try {
+        await db.ref(`rooms/${currentRoomId}/pages/${pageId}/name`).set(newName.trim());
+        loadPagesList();
+      } catch (err) {
+        console.error('Error renaming page:', err);
+        alert('Failed to rename page.');
       }
     }
   };
   
+  // Delete button
   const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '✕';
-  deleteBtn.className = 'page-action-btn destructive';
+  deleteBtn.textContent = '🗑️';
   deleteBtn.title = 'Delete page';
+  deleteBtn.style.cssText = `
+    padding: 8px 12px;
+    background: hsl(0, 60%, 45%);
+    color: white;
+    border: 1px solid hsl(0, 60%, 35%);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+  `;
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
     
@@ -843,20 +845,24 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
     const pageCount = pages ? Object.keys(pages).length : 0;
     
     if (pageCount <= 1) {
-      alert('Cannot delete the last page. Each room must have at least one page.');
+      alert('Cannot delete the last page. At least one page must remain.');
       return;
     }
     
-    if (confirm(`Delete "${pageName}"? This will permanently remove all drawings and text on this page.`)) {
-      await db.ref(`rooms/${currentRoomId}/pages/${pageId}`).remove();
-      
-      // If we deleted the current page, switch to page1
-      if (pageId === currentPageId) {
-        const remainingPages = Object.keys(pages).filter(id => id !== pageId);
-        switchPage(remainingPages[0] || 'page1');
+    if (confirm(`Delete ${pageName}? This will remove all content on this page.`)) {
+      try {
+        await db.ref(`rooms/${currentRoomId}/pages/${pageId}`).remove();
+        
+        // If we're deleting the current page, switch to page 1
+        if (pageId === currentPageId) {
+          switchPage('page1');
+        }
+        
+        loadPagesList();
+      } catch (err) {
+        console.error('Error deleting page:', err);
+        alert('Failed to delete page.');
       }
-      
-      loadPagesList();
     }
   };
   
@@ -884,12 +890,7 @@ document.getElementById('createPageBtn')?.addEventListener('click', async () => 
     const newPageNum = maxPageNum + 1;
     const newPageId = `page${newPageNum}`;
     
-    // Ask for page name
-    const pageName = prompt('Enter name for the new page:', `Page ${newPageNum}`);
-    if (pageName === null) return; // User cancelled
-    
-    // Create the new page with a name
-    await db.ref(`rooms/${currentRoomId}/pages/${newPageId}/name`).set(pageName.trim() || `Page ${newPageNum}`);
+    // Create the new page with a marker
     await db.ref(`rooms/${currentRoomId}/pages/${newPageId}/created`).set(true);
     
     // Switch to the new page
