@@ -799,6 +799,10 @@ function createPageButton(pageId, pageNum, pageName, isActive) {
     text-align: left;
     padding: 10px 14px;
     min-width: 0;
+    height: 38px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   `;
   btn.onclick = () => {
     switchPage(pageId);
