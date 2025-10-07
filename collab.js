@@ -12,12 +12,157 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+// ==================== User Management ====================
+let userName = null;
+let userSessionId = null;
+let presenceRef = null;
+let usersRef = null;
+
+function generateSessionId() {
+  return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function getUserName() {
+  // Try to get saved name from memory storage
+  if (userName) return userName;
+  
+  // Check if we have a name in memory (simulated storage)
+  const savedName = window.userNameCache;
+  if (savedName) {
+    userName = savedName;
+    return userName;
+  }
+  
+  // Prompt for name
+  const name = prompt('Welcome! Please enter your name:');
+  if (name && name.trim()) {
+    userName = name.trim();
+    window.userNameCache = userName; // Save to memory
+    return userName;
+  }
+  
+  // Default name if user cancels
+  userName = 'Anonymous';
+  window.userNameCache = userName;
+  return userName;
+}
+
+function setupPresence(roomId) {
+  if (!roomId || roomId === 'public') return;
+  
+  // Clean up previous presence
+  if (presenceRef) {
+    presenceRef.remove();
+    presenceRef = null;
+  }
+  
+  if (usersRef) {
+    usersRef.off();
+    usersRef = null;
+  }
+  
+  // Generate unique session ID for this user
+  userSessionId = generateSessionId();
+  
+  // Set up presence reference
+  presenceRef = db.ref(`rooms/${roomId}/users/${userSessionId}`);
+  usersRef = db.ref(`rooms/${roomId}/users`);
+  
+  // Set user data
+  presenceRef.set({
+    name: userName,
+    timestamp: firebase.database.ServerValue.TIMESTAMP
+  });
+  
+  // Remove user when they disconnect
+  presenceRef.onDisconnect().remove();
+  
+  // Listen for user changes
+  usersRef.on('value', snapshot => {
+    updateActiveUsers(snapshot);
+  });
+}
+
+function updateActiveUsers(snapshot) {
+  const usersContainer = document.getElementById('activeUsersList');
+  const userCount = document.getElementById('activeUserCount');
+  
+  if (!snapshot.exists()) {
+    if (usersContainer) {
+      usersContainer.innerHTML = '<p style="color: hsl(217, 10%, 70%); font-size: 13px; padding: 8px;">No users online</p>';
+    }
+    if (userCount) {
+      userCount.textContent = '0';
+    }
+    return;
+  }
+  
+  const users = snapshot.val();
+  const userList = Object.entries(users).map(([id, data]) => ({
+    id,
+    name: data.name || 'Anonymous',
+    timestamp: data.timestamp || 0
+  }));
+  
+  // Sort by join time (oldest first)
+  userList.sort((a, b) => a.timestamp - b.timestamp);
+  
+  if (usersContainer) {
+    usersContainer.innerHTML = '';
+    
+    userList.forEach(user => {
+      const userItem = document.createElement('div');
+      userItem.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        margin-bottom: 6px;
+        background: hsl(217, 20%, 20%);
+        border: 1px solid hsl(217, 20%, 25%);
+        border-radius: 6px;
+      `;
+      
+      const statusDot = document.createElement('div');
+      statusDot.style.cssText = `
+        width: 8px;
+        height: 8px;
+        background: hsl(142, 76%, 55%);
+        border-radius: 50%;
+        flex-shrink: 0;
+      `;
+      
+      const nameText = document.createElement('div');
+      nameText.textContent = user.name;
+      nameText.style.cssText = `
+        color: hsl(217, 10%, 92%);
+        font-size: 14px;
+        font-weight: 500;
+      `;
+      
+      // Highlight current user
+      if (user.id === userSessionId) {
+        nameText.textContent += ' (you)';
+        nameText.style.color = 'hsl(220, 90%, 56%)';
+      }
+      
+      userItem.appendChild(statusDot);
+      userItem.appendChild(nameText);
+      usersContainer.appendChild(userItem);
+    });
+  }
+  
+  if (userCount) {
+    userCount.textContent = userList.length.toString();
+  }
+}
+
 // ==================== Room History Management ====================
 function saveRoomToHistory(roomId) {
   if (roomId === 'public') return;
   
   try {
-    let history = JSON.parse(localStorage.getItem('roomHistory') || '[]');
+    let history = window.roomHistoryCache || [];
     
     // Remove if already exists (to update timestamp)
     history = history.filter(item => item.roomId !== roomId);
@@ -31,7 +176,7 @@ function saveRoomToHistory(roomId) {
     // Keep only last 10 rooms
     history = history.slice(0, 10);
     
-    localStorage.setItem('roomHistory', JSON.stringify(history));
+    window.roomHistoryCache = history;
   } catch (err) {
     console.error('Error saving room to history:', err);
   }
@@ -39,9 +184,9 @@ function saveRoomToHistory(roomId) {
 
 function removeRoomFromHistory(roomId) {
   try {
-    let history = JSON.parse(localStorage.getItem('roomHistory') || '[]');
+    let history = window.roomHistoryCache || [];
     history = history.filter(item => item.roomId !== roomId);
-    localStorage.setItem('roomHistory', JSON.stringify(history));
+    window.roomHistoryCache = history;
   } catch (err) {
     console.error('Error removing room from history:', err);
   }
@@ -52,7 +197,7 @@ async function loadRoomHistory() {
   if (!historyContainer) return;
   
   try {
-    const history = JSON.parse(localStorage.getItem('roomHistory') || '[]');
+    const history = window.roomHistoryCache || [];
     
     if (history.length === 0) {
       historyContainer.innerHTML = '<p style="color: hsl(217, 10%, 70%); font-size: 13px; padding: 8px;">No recent rooms</p>';
@@ -258,6 +403,9 @@ async function joinRoom(roomId, password = null) {
   setupRoomClearedListener();
   updateRoomIndicator();
   updatePageIndicator();
+  
+  // Set up presence tracking for private rooms
+  setupPresence(roomId);
 
   window.location.hash = roomId;
   
@@ -343,6 +491,8 @@ function updateRoomIndicator() {
   const deleteBtn = document.getElementById('deleteRoomBtn');
   const copyBtn = document.getElementById('copyRoomBtn');
   const pageMenuBtn = document.getElementById('pageMenuBtn');
+  const activeUsersSection = document.getElementById('activeUsersSection');
+  const activeUsersDivider = document.getElementById('activeUsersDivider');
 
   if (indicator && currentRoomId) {
     if (currentRoomId === 'public') {
@@ -355,6 +505,8 @@ function updateRoomIndicator() {
       if (deleteBtn) deleteBtn.style.display = 'none';
       if (copyBtn) copyBtn.style.display = 'none';
       if (pageMenuBtn) pageMenuBtn.style.display = 'none';
+      if (activeUsersSection) activeUsersSection.style.display = 'none';
+      if (activeUsersDivider) activeUsersDivider.style.display = 'none';
     } else {
       indicator.textContent = currentRoomId;
       menuBtn?.classList.remove('public');
@@ -365,6 +517,8 @@ function updateRoomIndicator() {
       if (deleteBtn) deleteBtn.style.display = 'block';
       if (copyBtn) copyBtn.style.display = 'block';
       if (pageMenuBtn) pageMenuBtn.style.display = 'block';
+      if (activeUsersSection) activeUsersSection.style.display = 'block';
+      if (activeUsersDivider) activeUsersDivider.style.display = 'block';
     }
   }
 }
@@ -1267,20 +1421,11 @@ pageMenuBtn?.addEventListener('click', () => {
             lastActivity = date.toLocaleString();
           }
           
-          // Count total lines and texts across all pages
-          let lineCount = 0;
-          let textCount = 0;
-          
-          if (roomData.pages) {
-            Object.values(roomData.pages).forEach(page => {
-              if (page.lines) lineCount += Object.keys(page.lines).length;
-              if (page.texts) textCount += Object.keys(page.texts).length;
-            });
+          // Count active users
+          let activeUserCount = 0;
+          if (roomData.users) {
+            activeUserCount = Object.keys(roomData.users).length;
           }
-          
-          // Fallback for old structure
-          if (roomData.lines) lineCount += Object.keys(roomData.lines).length;
-          if (roomData.texts) textCount += Object.keys(roomData.texts).length;
           
           const roomCard = document.createElement('div');
           roomCard.style.cssText = `
@@ -1297,7 +1442,7 @@ pageMenuBtn?.addEventListener('click', () => {
             </div>
             <div style="color: hsl(217, 10%, 80%); font-size: 13px; margin-bottom: 8px;">
               <div>Password: ${password}</div>
-              <div>Lines: ${lineCount} | Texts: ${textCount}</div>
+              <div>Active Users: ${activeUserCount}</div>
               <div>Last Activity: ${lastActivity}</div>
             </div>
           `;
@@ -1358,6 +1503,9 @@ pageMenuBtn?.addEventListener('click', () => {
 
 // ==================== Initialize ====================
 window.addEventListener('load', () => {
+  // Get or prompt for user name
+  getUserName();
+  
   const hashRoom = window.location.hash.substring(1);
   if (hashRoom) {
     joinRoom(hashRoom);
