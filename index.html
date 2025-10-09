@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Collaborative Drawing - Private Rooms</title>
   <style>
     * {
@@ -17,6 +17,7 @@
       background: hsl(217, 25%, 12%);
       color: hsl(217, 10%, 92%);
       overflow: hidden;
+      touch-action: pan-x pan-y pinch-zoom;
     }
 
     #drawCanvas {
@@ -25,6 +26,7 @@
       left: 0;
       background: white;
       cursor: crosshair;
+      touch-action: none;
     }
 
     #toolbar {
@@ -167,6 +169,8 @@
       border-radius: 12px;
       padding: 16px;
       min-width: 320px;
+      max-height: 70vh;
+      overflow-y: auto;
       box-shadow: 0px 30px 60px -12px hsl(0 0% 0% / 0.60);
       opacity: 0;
       visibility: hidden;
@@ -319,24 +323,52 @@
         right: 16px;
         max-width: calc(100% - 32px);
         overflow-x: auto;
+        max-height: none;
+        overflow-y: visible;
       }
 
       .room-menu-container {
-        top: auto;
-        bottom: 160px;
+        top: 16px;
+        bottom: auto;
         right: 16px;
       }
 
       .page-menu-container {
-        top: auto;
-        bottom: 96px;
+        top: 80px;
+        bottom: auto;
         right: 16px;
       }
 
       #roomDropdown, #pageDropdown {
-        min-width: 280px;
-        bottom: calc(100% + 8px);
-        top: auto;
+        min-width: 75vw;
+        max-width: 75vw;
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%) translateY(-8px);
+        max-height: calc(100vh - 180px);
+        bottom: auto;
+        top: calc(100% + 8px);
+      }
+
+      #roomDropdown.show, #pageDropdown.show {
+        transform: translateX(-50%) translateY(0);
+      }
+
+      /* Make dropdowns scrollable */
+      .dropdown-section {
+        max-height: none;
+      }
+
+      #roomHistoryList {
+        max-height: 150px;
+      }
+
+      #activeUsersList {
+        max-height: 120px;
+      }
+
+      #pagesList {
+        max-height: 200px;
       }
     }
   </style>
@@ -370,6 +402,7 @@
       <div class="dropdown-section" id="activeUsersSection" style="display: none;">
         <h3>Active Users (<span id="activeUserCount">0</span>)</h3>
         <div id="activeUsersList"></div>
+        <button id="changeNameBtn" class="secondary" data-testid="button-change-name" onclick="changeUserName()">Change My Name</button>
       </div>
       <div class="divider"></div>
       <div class="dropdown-section">
