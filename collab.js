@@ -12,6 +12,25 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+// ==================== Storage Helper ====================
+function setStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    console.warn('localStorage not available, data will not persist');
+    return false;
+  }
+}
+
+function getStorage(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return null;
+  }
+}
+
 // ==================== User Management ====================
 let userName = null;
 let userSessionId = null;
@@ -26,25 +45,30 @@ function getUserName() {
   // Try to get saved name from memory storage
   if (userName) return userName;
   
-  // Check if we have a name in memory (simulated storage)
-  const savedName = window.userNameCache;
+  // Check if we have a saved name in localStorage
+  const savedName = getStorage('userName');
   if (savedName) {
     userName = savedName;
     return userName;
   }
   
-  // Prompt for name
-  const name = prompt('Welcome! Please enter your name:');
-  if (name && name.trim()) {
-    userName = name.trim();
-    window.userNameCache = userName; // Save to memory
-    return userName;
-  }
-  
-  // Default name if user cancels
+  // Generate a default anonymous name
   userName = 'Anonymous';
-  window.userNameCache = userName;
+  setStorage('userName', userName);
   return userName;
+}
+
+function changeUserName() {
+  const newName = prompt('Enter your name:', userName || 'Anonymous');
+  if (newName && newName.trim()) {
+    userName = newName.trim();
+    setStorage('userName', userName);
+    
+    // Update presence if in a private room
+    if (presenceRef && currentRoomId !== 'public') {
+      presenceRef.update({ name: userName });
+    }
+  }
 }
 
 function setupPresence(roomId) {
@@ -162,7 +186,8 @@ function saveRoomToHistory(roomId) {
   if (roomId === 'public') return;
   
   try {
-    let history = window.roomHistoryCache || [];
+    const savedHistory = getStorage('roomHistory');
+    let history = savedHistory ? JSON.parse(savedHistory) : [];
     
     // Remove if already exists (to update timestamp)
     history = history.filter(item => item.roomId !== roomId);
@@ -176,7 +201,7 @@ function saveRoomToHistory(roomId) {
     // Keep only last 10 rooms
     history = history.slice(0, 10);
     
-    window.roomHistoryCache = history;
+    setStorage('roomHistory', JSON.stringify(history));
   } catch (err) {
     console.error('Error saving room to history:', err);
   }
@@ -184,9 +209,10 @@ function saveRoomToHistory(roomId) {
 
 function removeRoomFromHistory(roomId) {
   try {
-    let history = window.roomHistoryCache || [];
+    const savedHistory = getStorage('roomHistory');
+    let history = savedHistory ? JSON.parse(savedHistory) : [];
     history = history.filter(item => item.roomId !== roomId);
-    window.roomHistoryCache = history;
+    setStorage('roomHistory', JSON.stringify(history));
   } catch (err) {
     console.error('Error removing room from history:', err);
   }
@@ -197,7 +223,8 @@ async function loadRoomHistory() {
   if (!historyContainer) return;
   
   try {
-    const history = window.roomHistoryCache || [];
+    const savedHistory = getStorage('roomHistory');
+    const history = savedHistory ? JSON.parse(savedHistory) : [];
     
     if (history.length === 0) {
       historyContainer.innerHTML = '<p style="color: hsl(217, 10%, 70%); font-size: 13px; padding: 8px;">No recent rooms</p>';
@@ -1503,7 +1530,16 @@ pageMenuBtn?.addEventListener('click', () => {
 
 // ==================== Initialize ====================
 window.addEventListener('load', () => {
-  // Get or prompt for user name
+  // Check if device is a mobile phone (not tablet)
+  const isMobilePhone = /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && !(/iPad|Android(?!.*Mobile)/i.test(navigator.userAgent));
+  
+  if (isMobilePhone) {
+    alert('Sorry, this website is not compatible with mobile phones. Please use a tablet, laptop, or desktop computer.');
+    window.location.href = 'about:blank';
+    return;
+  }
+  
+  // Get or set user name
   getUserName();
   
   const hashRoom = window.location.hash.substring(1);
