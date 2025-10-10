@@ -173,6 +173,360 @@ function updateActiveUsers(snapshot) {
 let chatMessagesRef = null;
 let chatCache = [];
 
+// ==================== Camera System ====================
+let localStream = null;
+let cameraEnabled = false;
+let cameraStatusRef = null;
+let allCamerasRef = null;
+let peerConnections = new Map();
+let signalingRefs = new Map();
+
+// WebRTC Configuration with public STUN servers
+const rtcConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ]
+};
+
+async function setupCameraForRoom(roomId) {
+  if (roomId === 'public') {
+    const cameraContainer = document.getElementById('cameraContainer');
+    if (cameraContainer) cameraContainer.style.display = 'none';
+    
+    cleanupCamera();
+    return;
+  }
+  
+  const cameraContainer = document.getElementById('cameraContainer');
+  if (cameraContainer) cameraContainer.style.display = 'flex';
+  
+  cleanupCamera();
+  
+  cameraStatusRef = db.ref(`rooms/${roomId}/cameraStatus/${userSessionId}`);
+  allCamerasRef = db.ref(`rooms/${roomId}/cameraStatus`);
+  
+  cameraStatusRef.set({
+    name: userName,
+    enabled: false,
+    timestamp: firebase.database.ServerValue.TIMESTAMP
+  });
+  
+  cameraStatusRef.onDisconnect().remove();
+  
+  // Listen for other users' camera status
+  allCamerasRef.on('child_added', async snapshot => {
+    const sessionId = snapshot.key;
+    const data = snapshot.val();
+    
+    if (sessionId !== userSessionId && data.enabled && cameraEnabled) {
+      // Create peer connection for this user
+      await createPeerConnection(sessionId, true);
+    }
+    
+    updateCameraDisplay();
+  });
+  
+  allCamerasRef.on('child_changed', async snapshot => {
+    const sessionId = snapshot.key;
+    const data = snapshot.val();
+    
+    if (sessionId !== userSessionId) {
+      if (data.enabled && cameraEnabled) {
+        // Other user enabled camera
+        if (!peerConnections.has(sessionId)) {
+          await createPeerConnection(sessionId, true);
+        }
+      } else {
+        // Other user disabled camera
+        closePeerConnection(sessionId);
+      }
+    }
+    
+    updateCameraDisplay();
+  });
+  
+  allCamerasRef.on('child_removed', snapshot => {
+    const sessionId = snapshot.key;
+    closePeerConnection(sessionId);
+    updateCameraDisplay();
+  });
+}
+
+function cleanupCamera() {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+  
+  if (cameraStatusRef) {
+    cameraStatusRef.off();
+    cameraStatusRef = null;
+  }
+  
+  if (allCamerasRef) {
+    allCamerasRef.off();
+    allCamerasRef = null;
+  }
+  
+  // Close all peer connections
+  peerConnections.forEach((pc, sessionId) => {
+    closePeerConnection(sessionId);
+  });
+  peerConnections.clear();
+  
+  // Clean up signaling listeners
+  signalingRefs.forEach((ref, sessionId) => {
+    ref.off();
+    db.ref(`rooms/${currentRoomId}/signaling/${userSessionId}_${sessionId}`).remove();
+    db.ref(`rooms/${currentRoomId}/signaling/${sessionId}_${userSessionId}`).remove();
+  });
+  signalingRefs.clear();
+  
+  cameraEnabled = false;
+  updateCameraButton();
+}
+
+async function createPeerConnection(remoteSessionId, isInitiator) {
+  if (peerConnections.has(remoteSessionId)) {
+    return peerConnections.get(remoteSessionId);
+  }
+  
+  const peerConnection = new RTCPeerConnection(rtcConfiguration);
+  peerConnections.set(remoteSessionId, peerConnection);
+  
+  // Add local stream tracks to peer connection
+  if (localStream) {
+    localStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, localStream);
+    });
+  }
+  
+  // Handle incoming remote stream
+  peerConnection.ontrack = (event) => {
+    const remoteStream = event.streams[0];
+    displayRemoteVideo(remoteSessionId, remoteStream);
+  };
+  
+  // Handle ICE candidates
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      const signalingPath = `rooms/${currentRoomId}/signaling/${userSessionId}_${remoteSessionId}`;
+      db.ref(signalingPath).push({
+        type: 'candidate',
+        candidate: event.candidate.toJSON(),
+        from: userSessionId
+      });
+    }
+  };
+  
+  // Set up signaling listener
+  const incomingSignalingPath = `rooms/${currentRoomId}/signaling/${remoteSessionId}_${userSessionId}`;
+  const signalingRef = db.ref(incomingSignalingPath);
+  signalingRefs.set(remoteSessionId, signalingRef);
+  
+  signalingRef.on('child_added', async snapshot => {
+    const message = snapshot.val();
+    
+    if (message.type === 'offer') {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      
+      db.ref(`rooms/${currentRoomId}/signaling/${userSessionId}_${remoteSessionId}`).push({
+        type: 'answer',
+        answer: peerConnection.localDescription.toJSON(),
+        from: userSessionId
+      });
+    } else if (message.type === 'answer') {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
+    } else if (message.type === 'candidate') {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+    }
+    
+    // Clean up old signaling messages
+    snapshot.ref.remove();
+  });
+  
+  // If initiator, create and send offer
+  if (isInitiator) {
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    
+    db.ref(`rooms/${currentRoomId}/signaling/${userSessionId}_${remoteSessionId}`).push({
+      type: 'offer',
+      offer: peerConnection.localDescription.toJSON(),
+      from: userSessionId
+    });
+  }
+  
+  return peerConnection;
+}
+
+function closePeerConnection(remoteSessionId) {
+  const pc = peerConnections.get(remoteSessionId);
+  if (pc) {
+    pc.close();
+    peerConnections.delete(remoteSessionId);
+  }
+  
+  const signalingRef = signalingRefs.get(remoteSessionId);
+  if (signalingRef) {
+    signalingRef.off();
+    signalingRefs.delete(remoteSessionId);
+  }
+  
+  // Clean up signaling paths
+  if (currentRoomId) {
+    db.ref(`rooms/${currentRoomId}/signaling/${userSessionId}_${remoteSessionId}`).remove();
+    db.ref(`rooms/${currentRoomId}/signaling/${remoteSessionId}_${userSessionId}`).remove();
+  }
+}
+
+function displayRemoteVideo(remoteSessionId, remoteStream) {
+  const videoElement = document.getElementById(`video-${remoteSessionId}`);
+  if (videoElement) {
+    videoElement.srcObject = remoteStream;
+  }
+}
+
+async function toggleCamera() {
+  if (!currentRoomId || currentRoomId === 'public') return;
+  
+  cameraEnabled = !cameraEnabled;
+  
+  if (cameraEnabled) {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: 640, height: 480 }, 
+        audio: false 
+      });
+      
+      await cameraStatusRef.update({ 
+        enabled: true,
+        name: userName
+      });
+      
+      // Create peer connections with all other users who have cameras enabled
+      const snapshot = await allCamerasRef.once('value');
+      if (snapshot.exists()) {
+        const cameras = snapshot.val();
+        for (const [sessionId, data] of Object.entries(cameras)) {
+          if (sessionId !== userSessionId && data.enabled) {
+            await createPeerConnection(sessionId, false);
+          }
+        }
+      }
+      
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      alert('Could not access camera. Please check permissions.');
+      cameraEnabled = false;
+    }
+  } else {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+    }
+    
+    // Close all peer connections
+    peerConnections.forEach((pc, sessionId) => {
+      closePeerConnection(sessionId);
+    });
+    
+    await cameraStatusRef.update({ 
+      enabled: false,
+      name: userName
+    });
+  }
+  
+  updateCameraButton();
+  updateCameraDisplay();
+}
+
+function updateCameraButton() {
+  const btn = document.getElementById('toggleCameraBtn');
+  if (!btn) return;
+  
+  if (cameraEnabled) {
+    btn.textContent = 'Disable Camera';
+    btn.classList.add('disabled');
+  } else {
+    btn.textContent = 'Enable Camera';
+    btn.classList.remove('disabled');
+  }
+}
+
+async function updateCameraDisplay() {
+  const videosContainer = document.getElementById('cameraVideos');
+  if (!videosContainer) return;
+  
+  const snapshot = await allCamerasRef.once('value');
+  
+  videosContainer.innerHTML = '';
+  
+  if (!snapshot.exists()) {
+    videosContainer.innerHTML = '<p style="color: hsl(217, 10%, 70%); font-size: 13px; padding: 8px; text-align: center;">No cameras active</p>';
+    return;
+  }
+  
+  const cameras = snapshot.val();
+  
+  Object.entries(cameras).forEach(([sessionId, data]) => {
+    const videoItem = document.createElement('div');
+    videoItem.className = 'camera-video-item';
+    
+    const isCurrentUser = sessionId === userSessionId;
+    const displayName = isCurrentUser ? `${data.name} (You)` : data.name;
+    
+    if (data.enabled) {
+      const video = document.createElement('video');
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = isCurrentUser;
+      video.id = `video-${sessionId}`;
+      
+      if (isCurrentUser && localStream) {
+        video.srcObject = localStream;
+      }
+      
+      videoItem.appendChild(video);
+      
+      const label = document.createElement('div');
+      label.className = 'camera-video-label';
+      label.textContent = displayName;
+      videoItem.appendChild(label);
+    } else {
+      videoItem.classList.add('disabled');
+      const nameDisplay = document.createElement('div');
+      nameDisplay.className = 'user-name-display';
+      nameDisplay.textContent = displayName;
+      videoItem.appendChild(nameDisplay);
+    }
+    
+    videosContainer.appendChild(videoItem);
+  });
+}
+
+function toggleCameraPanel() {
+  const cameraPanel = document.getElementById('cameraPanel');
+  const cameraBtn = document.getElementById('cameraMenuBtn');
+  
+  if (!cameraPanel) return;
+  
+  const isVisible = cameraPanel.style.display === 'flex';
+  cameraPanel.style.display = isVisible ? 'none' : 'flex';
+  
+  if (cameraBtn) {
+    cameraBtn.style.background = isVisible ? 'hsl(217, 25%, 16%)' : 'hsl(220, 90%, 56%)';
+  }
+  
+  if (!isVisible) {
+    updateCameraDisplay();
+  }
+}
+
 function setupChatForRoom(roomId) {
   if (roomId === 'public') {
     const chatContainer = document.getElementById('chatContainer');
@@ -527,6 +881,7 @@ async function joinRoom(roomId, password = null) {
   
   setupPresence(roomId);
   setupChatForRoom(roomId);
+  setupCameraForRoom(roomId);
 
   window.location.hash = roomId;
   
@@ -753,6 +1108,7 @@ let brushSize = 4;
 let drawing = false;
 let current = { x: 0, y: 0 };
 let eraserActive = false;
+let eyedropperActive = false;
 
 function drawLineSmooth(x0, y0, x1, y1, color = brushColor, width = brushSize, erase = false) {
   const points = [];
@@ -783,6 +1139,25 @@ function drawLineSmooth(x0, y0, x1, y1, color = brushColor, width = brushSize, e
 // ==================== Pointer Handling & Text Dragging ====================
 function startDrawing(x, y) { drawing = true; current.x = x; current.y = y; }
 function stopDrawing() { drawing = false; }
+
+function getColorAtPoint(x, y) {
+  const pixelData = ctx.getImageData(x, y, 1, 1).data;
+  const r = pixelData[0];
+  const g = pixelData[1];
+  const b = pixelData[2];
+  const a = pixelData[3];
+  
+  // If fully transparent, return white
+  if (a === 0) {
+    return '#ffffff';
+  }
+  
+  // Convert RGB to hex
+  return '#' + [r, g, b].map(x => {
+    const hex = x.toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  }).join('');
+}
 
 function textAtPoint(x, y) {
   let found = null;
@@ -822,6 +1197,22 @@ function scheduleDragUpdate() {
 }
 
 function handlePointerDown(x, y) {
+  // Handle eyedropper mode
+  if (eyedropperActive) {
+    const pickedColor = getColorAtPoint(x, y);
+    brushColor = pickedColor;
+    colorPicker.value = pickedColor;
+    eyedropperActive = false;
+    canvas.classList.remove('eyedropper-mode');
+    
+    // Update eyedropper button state
+    const eyedropperBtn = document.getElementById('eyedropperBtn');
+    if (eyedropperBtn) {
+      eyedropperBtn.style.backgroundColor = '';
+    }
+    return;
+  }
+  
   const hit = textAtPoint(x, y);
   if (hit) {
     draggingTextKey = hit.key;
@@ -833,6 +1224,11 @@ function handlePointerDown(x, y) {
 }
 
 function drawMove(x, y) {
+  // Don't draw if eyedropper is active
+  if (eyedropperActive) {
+    return;
+  }
+  
   if (draggingTextKey) {
     latestDragPos = { x: x - dragOffset.x, y: y - dragOffset.y };
     scheduleDragUpdate();
@@ -884,6 +1280,7 @@ canvas.addEventListener('touchmove', e => {
 
 // ==================== UI Controls ====================
 const colorPicker = document.getElementById('colorPicker');
+const eyedropperBtn = document.getElementById('eyedropperBtn');
 const sizePicker = document.getElementById('sizePicker');
 if (sizePicker) {
   sizePicker.max = '200';
@@ -951,6 +1348,28 @@ colorPicker.addEventListener('change', e => {
   brushColor = e.target.value;
   eraserActive = false;
   eraserBtn.style.backgroundColor = '';
+  eyedropperActive = false;
+  canvas.classList.remove('eyedropper-mode');
+  if (eyedropperBtn) {
+    eyedropperBtn.style.backgroundColor = '';
+  }
+});
+
+eyedropperBtn?.addEventListener('click', () => {
+  eyedropperActive = !eyedropperActive;
+  
+  if (eyedropperActive) {
+    // Disable eraser if active
+    eraserActive = false;
+    eraserBtn.style.backgroundColor = '';
+    
+    // Update button state
+    eyedropperBtn.style.backgroundColor = 'hsl(220, 90%, 56%)';
+    canvas.classList.add('eyedropper-mode');
+  } else {
+    eyedropperBtn.style.backgroundColor = '';
+    canvas.classList.remove('eyedropper-mode');
+  }
 });
 
 const updateBrushSize = (raw) => {
@@ -965,6 +1384,15 @@ sizePicker.addEventListener('change', e => updateBrushSize(e.target.value));
 eraserBtn.addEventListener('click', () => {
   eraserActive = !eraserActive;
   eraserBtn.style.backgroundColor = eraserActive ? 'orange' : '';
+  
+  // Disable eyedropper if active
+  if (eraserActive && eyedropperActive) {
+    eyedropperActive = false;
+    canvas.classList.remove('eyedropper-mode');
+    if (eyedropperBtn) {
+      eyedropperBtn.style.backgroundColor = '';
+    }
+  }
 });
 
 function findEmptySpace(textWidth, textHeight) {
@@ -1613,6 +2041,23 @@ window.addEventListener('load', () => {
         sendChatMessage();
       }
     });
+  }
+  
+  // Camera event listeners
+  const cameraMenuBtn = document.getElementById('cameraMenuBtn');
+  const closeCameraBtn = document.getElementById('closeCameraBtn');
+  const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+
+  if (cameraMenuBtn) {
+    cameraMenuBtn.addEventListener('click', toggleCameraPanel);
+  }
+
+  if (closeCameraBtn) {
+    closeCameraBtn.addEventListener('click', toggleCameraPanel);
+  }
+
+  if (toggleCameraBtn) {
+    toggleCameraBtn.addEventListener('click', toggleCamera);
   }
   
   const hashRoom = window.location.hash.substring(1);
