@@ -29,6 +29,10 @@
       touch-action: none;
     }
 
+    #drawCanvas.eyedropper-mode {
+      cursor: crosshair;
+    }
+
     #toolbar {
       position: fixed;
       top: 16px;
@@ -323,6 +327,179 @@
       z-index: 1000;
     }
 
+    /* Camera Styles */
+    .camera-container {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      z-index: 1000;
+      display: none;
+    }
+
+    .camera-menu-btn {
+      background: hsl(217, 25%, 16%);
+      border: 1px solid hsl(217, 22%, 18%);
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0px 10px 20px -4px hsl(0 0% 0% / 0.45);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: hsl(217, 10%, 92%);
+      transition: all 150ms;
+      min-width: 120px;
+    }
+
+    .camera-menu-btn:hover {
+      background: hsl(217, 25%, 18%);
+    }
+
+    .camera-panel {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 0;
+      width: 280px;
+      max-height: 70vh;
+      background: hsl(217, 25%, 16%);
+      border: 1px solid hsl(217, 22%, 20%);
+      border-radius: 12px;
+      box-shadow: 0px 30px 60px -12px hsl(0 0% 0% / 0.60);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .camera-header {
+      background: hsl(217, 25%, 18%);
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid hsl(217, 22%, 20%);
+    }
+
+    .camera-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: hsl(217, 10%, 92%);
+    }
+
+    .close-camera-btn {
+      background: transparent;
+      border: none;
+      color: hsl(217, 10%, 70%);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 150ms;
+    }
+
+    .close-camera-btn:hover {
+      background: hsl(217, 20%, 24%);
+      color: hsl(217, 10%, 92%);
+    }
+
+    .camera-videos {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: hsl(217, 25%, 14%);
+      max-height: calc(70vh - 120px);
+      min-height: 150px;
+    }
+
+    .camera-video-item {
+      position: relative;
+      width: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+      background: hsl(217, 20%, 20%);
+      border: 2px solid hsl(217, 20%, 25%);
+      min-height: 120px;
+    }
+
+    .camera-video-item video {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      display: block;
+      border-radius: 6px;
+      background: #000;
+    }
+
+    .camera-video-item.disabled {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 120px;
+      background: hsl(217, 20%, 18%);
+    }
+
+    .camera-video-item.disabled .user-name-display {
+      font-size: 16px;
+      font-weight: 600;
+      color: hsl(217, 10%, 92%);
+      text-align: center;
+    }
+
+    .camera-video-label {
+      position: absolute;
+      bottom: 6px;
+      left: 6px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .camera-controls {
+      display: flex;
+      padding: 10px;
+      gap: 8px;
+      background: hsl(217, 25%, 18%);
+      border-top: 1px solid hsl(217, 22%, 20%);
+    }
+
+    .camera-toggle-btn {
+      flex: 1;
+      padding: 10px;
+      background: hsl(142, 76%, 55%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 150ms;
+    }
+
+    .camera-toggle-btn:hover {
+      background: hsl(142, 76%, 48%);
+    }
+
+    .camera-toggle-btn.disabled {
+      background: hsl(0, 84%, 48%);
+    }
+
+    .camera-toggle-btn.disabled:hover {
+      background: hsl(0, 84%, 40%);
+    }
+
     .chat-menu-btn {
       background: hsl(217, 25%, 16%);
       border: 1px solid hsl(217, 22%, 18%);
@@ -508,6 +685,26 @@
         max-width: 350px;
         height: 400px;
       }
+
+      .camera-container {
+        top: 144px;
+        right: 16px;
+      }
+
+      .camera-container {
+        bottom: 120px;
+        left: 16px;
+      }
+
+      .camera-panel {
+        width: calc(100vw - 32px);
+        max-width: 280px;
+        max-height: 60vh;
+      }
+
+      .camera-videos {
+        max-height: calc(60vh - 120px);
+      }
     }
   </style>
 </head>
@@ -516,6 +713,7 @@
 
   <div id="toolbar">
     <input type="color" id="colorPicker" value="#000000" title="Brush color">
+    <button id="eyedropperBtn" class="secondary" title="Pick color from canvas">🎨</button>
     <input type="number" id="sizePicker" min="1" max="200" value="4" title="Brush size">
     <button id="eraserBtn" class="secondary" data-testid="button-eraser">Eraser</button>
     <input type="number" id="textSizePicker" min="10" max="200" value="40" title="Text size">
@@ -590,6 +788,24 @@
       <div class="chat-input-container">
         <input type="text" id="chatInput" placeholder="Type a message..." />
         <button id="sendChatBtn">➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Camera Container (only visible in private rooms) -->
+  <div id="cameraContainer" class="camera-container" style="display: none;">
+    <div id="cameraMenuBtn" class="camera-menu-btn">
+      <span>📹</span>
+      <span>Cameras</span>
+    </div>
+    <div id="cameraPanel" class="camera-panel">
+      <div class="camera-header">
+        <h3>Room Cameras</h3>
+        <button id="closeCameraBtn" class="close-camera-btn">✕</button>
+      </div>
+      <div id="cameraVideos" class="camera-videos"></div>
+      <div class="camera-controls">
+        <button id="toggleCameraBtn" class="camera-toggle-btn">Enable Camera</button>
       </div>
     </div>
   </div>
